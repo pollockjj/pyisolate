@@ -8,9 +8,10 @@ echo.
 echo This script will:
 echo   1. Check for uv installation
 echo   2. Create a virtual environment
-echo   3. Install necessary dependencies
-echo   4. Run performance and memory benchmarks
-echo   5. Collect all results in a single file
+echo   3. Install PyTorch with appropriate CUDA support
+echo   4. Install remaining dependencies
+echo   5. Run performance and memory benchmarks
+echo   6. Collect all results in a single file
 echo.
 echo ================================================================
 echo.
@@ -22,9 +23,11 @@ set "TIMESTAMP=%TIMESTAMP: =0%"
 set "OUTPUT_FILE=benchmark_results_%COMPUTERNAME%_%TIMESTAMP%.txt"
 set "VENV_DIR=.benchmark_venv"
 set "ERROR_LOG=benchmark_errors.log"
+set "TEMP_OUTPUT=temp_output.txt"
 
 REM Clean up any previous error log
 if exist "%ERROR_LOG%" del "%ERROR_LOG%"
+if exist "%TEMP_OUTPUT%" del "%TEMP_OUTPUT%"
 
 echo [%date% %time%] Starting benchmark process... > "%OUTPUT_FILE%"
 echo ================================================================ >> "%OUTPUT_FILE%"
@@ -138,42 +141,106 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo Virtual environment activated: OK
 
-REM Step 4: Install pyisolate and dependencies
+REM Step 4: Detect CUDA and install PyTorch appropriately
 echo.
-echo Step 4: Installing pyisolate and base dependencies...
-uv pip install -e ".[bench]" 2>"%ERROR_LOG%"
-if %ERRORLEVEL% NEQ 0 (
+echo Step 4: Detecting GPU and installing PyTorch...
+echo.
+
+REM Check for CUDA availability
+set "CUDA_AVAILABLE=0"
+set "CUDA_VERSION="
+
+where nvidia-smi >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo NVIDIA GPU detected. Checking CUDA version...
+
+    REM Get CUDA version from nvidia-smi
+    for /f "tokens=*" %%i in ('nvidia-smi 2^>nul ^| findstr "CUDA Version"') do (
+        set "CUDA_LINE=%%i"
+    )
+
+    REM Extract CUDA version number
+    if defined CUDA_LINE (
+        for /f "tokens=4" %%a in ("!CUDA_LINE!") do (
+            set "CUDA_VERSION=%%a"
+            set "CUDA_AVAILABLE=1"
+        )
+    )
+
+    if !CUDA_AVAILABLE! EQU 1 (
+        echo Detected CUDA version: !CUDA_VERSION!
+        echo [%date% %time%] CUDA detected: !CUDA_VERSION! >> "%OUTPUT_FILE%"
+
+        REM Determine PyTorch CUDA version based on detected CUDA
+        REM Extract major version
+        for /f "tokens=1 delims=." %%a in ("!CUDA_VERSION!") do set "CUDA_MAJOR=%%a"
+
+        REM Map CUDA version to PyTorch index
+        if !CUDA_MAJOR! GEQ 12 (
+            set "TORCH_INDEX=https://download.pytorch.org/whl/cu121"
+            echo Installing PyTorch with CUDA 12.1 support...
+        ) else if !CUDA_MAJOR! EQU 11 (
+            set "TORCH_INDEX=https://download.pytorch.org/whl/cu118"
+            echo Installing PyTorch with CUDA 11.8 support...
+        ) else (
+            set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
+            echo CUDA version too old, installing CPU-only PyTorch...
+        )
+    ) else (
+        echo Could not determine CUDA version, installing CPU-only PyTorch...
+        set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
+    )
+) else (
+    echo No NVIDIA GPU detected. Installing CPU-only PyTorch...
+    set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
+    echo [%date% %time%] No CUDA detected, using CPU PyTorch >> "%OUTPUT_FILE%"
+)
+
+REM Install PyTorch with appropriate index
+echo.
+echo Installing PyTorch from: !TORCH_INDEX!
+uv pip install torch torchvision torchaudio --index-url !TORCH_INDEX! > "%TEMP_OUTPUT%" 2>&1
+set TORCH_INSTALL_RESULT=%ERRORLEVEL%
+type "%TEMP_OUTPUT%"
+type "%TEMP_OUTPUT%" >> "%OUTPUT_FILE%"
+
+if %TORCH_INSTALL_RESULT% NEQ 0 (
+    echo.
+    echo ERROR: Failed to install PyTorch.
+    echo [%date% %time%] ERROR: Failed to install PyTorch >> "%OUTPUT_FILE%"
+    echo.
+    echo Continuing without PyTorch - some benchmarks will be skipped
+    echo.
+) else (
+    echo PyTorch installed successfully!
+    echo [%date% %time%] PyTorch installed successfully >> "%OUTPUT_FILE%"
+)
+
+REM Step 5: Install remaining dependencies
+echo.
+echo Step 5: Installing remaining dependencies...
+
+REM Install benchmark dependencies
+uv pip install numpy psutil tabulate nvidia-ml-py3 > "%TEMP_OUTPUT%" 2>&1
+type "%TEMP_OUTPUT%"
+type "%TEMP_OUTPUT%" >> "%OUTPUT_FILE%"
+
+REM Install pyisolate in editable mode
+uv pip install -e . > "%TEMP_OUTPUT%" 2>&1
+set PYISOLATE_RESULT=%ERRORLEVEL%
+type "%TEMP_OUTPUT%"
+type "%TEMP_OUTPUT%" >> "%OUTPUT_FILE%"
+
+if %PYISOLATE_RESULT% NEQ 0 (
     echo ERROR: Failed to install pyisolate
-    type "%ERROR_LOG%"
     echo [%date% %time%] ERROR: Failed to install pyisolate >> "%OUTPUT_FILE%"
-    type "%ERROR_LOG%" >> "%OUTPUT_FILE%"
     pause
     exit /b 1
 )
 echo pyisolate installed: OK
 echo [%date% %time%] pyisolate installed >> "%OUTPUT_FILE%"
 
-REM Step 5: Install PyTorch with correct CUDA version
-echo.
-echo Step 5: Installing PyTorch with appropriate CUDA support...
-echo Running PyTorch installation helper...
-python install_torch_cuda.py 2>"%ERROR_LOG%"
-if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: PyTorch installation helper failed
-    echo Attempting manual CPU-only installation...
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu 2>"%ERROR_LOG%"
-    if !ERRORLEVEL! NEQ 0 (
-        echo ERROR: Failed to install PyTorch
-        type "%ERROR_LOG%"
-        echo [%date% %time%] ERROR: Failed to install PyTorch >> "%OUTPUT_FILE%"
-        type "%ERROR_LOG%" >> "%OUTPUT_FILE%"
-        echo.
-        echo Continuing without PyTorch - some benchmarks will be skipped
-    )
-)
-echo [%date% %time%] PyTorch installation completed >> "%OUTPUT_FILE%"
-
-REM Verify Python and package versions
+REM Step 6: Verify installation
 echo.
 echo Step 6: Verifying installation...
 echo. >> "%OUTPUT_FILE%"
@@ -192,7 +259,7 @@ echo Step 7: Running performance benchmarks...
 echo ================================================================ >> "%OUTPUT_FILE%"
 echo PERFORMANCE BENCHMARKS >> "%OUTPUT_FILE%"
 echo ================================================================ >> "%OUTPUT_FILE%"
-echo.
+echo. >> "%OUTPUT_FILE%"
 
 cd benchmarks 2>nul
 if %ERRORLEVEL% NEQ 0 (
@@ -203,11 +270,19 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo Running benchmark.py (this may take several minutes)...
-python benchmark.py --quick 2>&1 | tee -a "..\%OUTPUT_FILE%"
-if %ERRORLEVEL% NEQ 0 (
+echo Output is being saved to the results file...
+
+REM Run benchmark and capture output
+python benchmark.py --quick > "%TEMP_OUTPUT%" 2>&1
+set BENCHMARK_RESULT=!ERRORLEVEL!
+type "%TEMP_OUTPUT%"
+type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
+
+if %BENCHMARK_RESULT% NEQ 0 (
+    echo.
     echo WARNING: Performance benchmark failed or was interrupted
     echo [%date% %time%] WARNING: Performance benchmark failed >> "..\%OUTPUT_FILE%"
-    echo Error code: %ERRORLEVEL% >> "..\%OUTPUT_FILE%"
+    echo Error code: %BENCHMARK_RESULT% >> "..\%OUTPUT_FILE%"
     echo. >> "..\%OUTPUT_FILE%"
     echo Continuing with memory benchmarks...
 )
@@ -219,14 +294,22 @@ echo. >> "..\%OUTPUT_FILE%"
 echo ================================================================ >> "..\%OUTPUT_FILE%"
 echo MEMORY BENCHMARKS >> "..\%OUTPUT_FILE%"
 echo ================================================================ >> "..\%OUTPUT_FILE%"
-echo.
+echo. >> "..\%OUTPUT_FILE%"
 
 echo Running memory_benchmark.py (this may take several minutes)...
-python memory_benchmark.py --counts 1,2,5,10 --test-both-modes 2>&1 | tee -a "..\%OUTPUT_FILE%"
-if %ERRORLEVEL% NEQ 0 (
+echo Output is being saved to the results file...
+
+REM Run memory benchmark and capture output
+python memory_benchmark.py --counts 1,2,5,10 --test-both-modes > "%TEMP_OUTPUT%" 2>&1
+set MEMORY_RESULT=!ERRORLEVEL!
+type "%TEMP_OUTPUT%"
+type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
+
+if %MEMORY_RESULT% NEQ 0 (
+    echo.
     echo WARNING: Memory benchmark failed or was interrupted
     echo [%date% %time%] WARNING: Memory benchmark failed >> "..\%OUTPUT_FILE%"
-    echo Error code: %ERRORLEVEL% >> "..\%OUTPUT_FILE%"
+    echo Error code: %MEMORY_RESULT% >> "..\%OUTPUT_FILE%"
 )
 
 cd ..
@@ -265,6 +348,10 @@ echo. >> "%OUTPUT_FILE%"
 echo ================================================================ >> "%OUTPUT_FILE%"
 echo [%date% %time%] Benchmark collection completed >> "%OUTPUT_FILE%"
 echo ================================================================ >> "%OUTPUT_FILE%"
+
+REM Cleanup temporary files
+if exist "%TEMP_OUTPUT%" del "%TEMP_OUTPUT%"
+if exist "%ERROR_LOG%" del "%ERROR_LOG%"
 
 REM Deactivate virtual environment
 call deactivate 2>nul
