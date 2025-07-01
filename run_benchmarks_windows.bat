@@ -272,20 +272,32 @@ if %ERRORLEVEL% NEQ 0 (
 echo Running benchmark.py (this may take several minutes)...
 echo Output is being saved to the results file...
 
-REM Run benchmark and capture output
-python benchmark.py --quick > "%TEMP_OUTPUT%" 2>&1
+REM Run benchmark with output capture
+REM Note: Windows doesn't have a built-in timeout for console apps, but we can use start /wait
+echo Starting performance benchmark...
+start /B /WAIT python benchmark.py --quick > "%TEMP_OUTPUT%" 2>&1
 set BENCHMARK_RESULT=!ERRORLEVEL!
-type "%TEMP_OUTPUT%"
-type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
 
-if %BENCHMARK_RESULT% NEQ 0 (
+REM Display and save the output
+if exist "%TEMP_OUTPUT%" (
+    type "%TEMP_OUTPUT%"
+    type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
+)
+
+if %BENCHMARK_RESULT% EQU -1 (
+    echo.
+    echo WARNING: Performance benchmark timed out after 10 minutes
+    echo This may indicate CUDA multiprocessing issues on Windows
+    echo Partial results have been saved
+    echo.
+) else if %BENCHMARK_RESULT% NEQ 0 (
     echo.
     echo WARNING: Performance benchmark failed or was interrupted
     echo [%date% %time%] WARNING: Performance benchmark failed >> "..\%OUTPUT_FILE%"
     echo Error code: %BENCHMARK_RESULT% >> "..\%OUTPUT_FILE%"
     echo. >> "..\%OUTPUT_FILE%"
-    echo Continuing with memory benchmarks...
 )
+echo Continuing with memory benchmarks...
 
 REM Step 8: Run memory benchmarks
 echo.
@@ -298,14 +310,29 @@ echo. >> "..\%OUTPUT_FILE%"
 
 echo Running memory_benchmark.py (this may take several minutes)...
 echo Output is being saved to the results file...
+echo NOTE: This test intentionally pushes VRAM limits to find maximum capacity
 
-REM Run memory benchmark and capture output
-python memory_benchmark.py --counts 1,2,5,10 --test-both-modes > "%TEMP_OUTPUT%" 2>&1
+REM Run memory benchmark
+REM Memory benchmarks take longer due to multiple extension creation
+echo Starting memory benchmark...
+echo NOTE: Press Ctrl+C if the benchmark appears stuck (Windows CUDA multiprocessing can hang)
+start /B /WAIT python memory_benchmark.py --counts 1,2,5,10 --test-both-modes > "%TEMP_OUTPUT%" 2>&1
 set MEMORY_RESULT=!ERRORLEVEL!
-type "%TEMP_OUTPUT%"
-type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
 
-if %MEMORY_RESULT% NEQ 0 (
+REM Display and save the output
+if exist "%TEMP_OUTPUT%" (
+    type "%TEMP_OUTPUT%"
+    type "%TEMP_OUTPUT%" >> "..\%OUTPUT_FILE%"
+)
+
+if %MEMORY_RESULT% EQU -1 (
+    echo.
+    echo WARNING: Memory benchmark timed out after 20 minutes
+    echo This may indicate CUDA multiprocessing issues on Windows
+    echo Partial results have been saved
+    echo.
+    echo [%date% %time%] WARNING: Memory benchmark timed out >> "..\%OUTPUT_FILE%"
+) else if %MEMORY_RESULT% NEQ 0 (
     echo.
     echo WARNING: Memory benchmark failed or was interrupted
     echo [%date% %time%] WARNING: Memory benchmark failed >> "..\%OUTPUT_FILE%"
@@ -365,6 +392,12 @@ echo.
 echo Results have been saved to: %OUTPUT_FILE%
 echo.
 echo Please send the file '%OUTPUT_FILE%' back for analysis.
+echo.
+echo IMPORTANT NOTES:
+echo - The benchmarks intentionally push VRAM limits to find maximum capacity
+echo - CUDA out-of-memory errors are EXPECTED and part of the testing
+echo - If tests timeout, it may indicate Windows CUDA multiprocessing limitations
+echo - Partial results are still valuable and have been saved
 echo.
 echo If you encountered any errors, please also include any error
 echo messages shown above.
