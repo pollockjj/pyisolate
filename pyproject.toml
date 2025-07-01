@@ -41,6 +41,7 @@ dev = [
 test = [
     "torch>=2.0.0",  # For testing share_torch functionality
     "numpy>=1.26.0,<2.0.0",  # For testing share_torch functionality
+    "pyyaml>=5.4.0",  # For test manifest creation
 ]
 bench = [
     "torch>=2.0.0",  # For tensor benchmarking
@@ -50,6 +51,7 @@ bench = [
     "nvidia-ml-py3>=7.352.0",  # For GPU memory monitoring
     "pytest>=7.0",  # Required by benchmark scripts that import from tests
     "pytest-asyncio>=0.21.0",  # Required for async test fixtures
+    "pyyaml>=5.4.0",  # Required by test files that benchmarks import
 ]
 docs = [
     "sphinx>=5.0",
