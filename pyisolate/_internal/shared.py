@@ -6,7 +6,6 @@ import inspect
 import logging
 import queue
 import threading
-import traceback
 import uuid
 from typing import (
     TYPE_CHECKING,
@@ -286,14 +285,14 @@ class AsyncRPC:
                 result=result,
                 error=None,
             )
-        except Exception as e:
-            error_msg = str(e)
-            # Check for CUDA OOM errors specifically
-            if "CUDA error: out of memory" in error_msg or "out of memory" in error_msg.lower():
-                print(f"CUDA OOM error in RPC dispatch for {request.get('method', 'unknown')}: {error_msg}")
-                traceback.print_exc()
-            else:
-                traceback.print_exc()
+        except Exception as exc:
+            error_msg = str(exc)
+            logger.exception(
+                "📚 [PyIsolate][RPC] Dispatch failed for %s.%s: %s",
+                request.get("object_id", "unknown"),
+                request.get("method", "unknown"),
+                error_msg,
+            )
             response = RPCResponse(
                 kind="response",
                 call_id=request["call_id"],
@@ -304,38 +303,19 @@ class AsyncRPC:
         debugprint("Sending response: ", response)
         try:
             self.send_queue.put(response)
-        except Exception as e:
-            error_msg = str(e)
-            if "CUDA error: out of memory" in error_msg or "out of memory" in error_msg.lower():
-                print(f"CUDA OOM error while sending RPC response: {error_msg}")
-                # Try to send a simpler error response
-                try:
-                    simple_response = RPCResponse(
-                        kind="response",
-                        call_id=request["call_id"],
-                        result=None,
-                        error=f"CUDA out of memory during response transmission: {error_msg}",
-                    )
-                    self.send_queue.put(simple_response)
-                except Exception:
-                    print("Failed to send even a simple error response - process may be stuck")
-            else:
-                print(f"Error sending RPC response: {error_msg}")
-                raise
+        except Exception as exc:
+            message = f"📚 [PyIsolate][RPC] Failed sending response (rpc_id={self.id}): {exc}"
+            logger.exception(message)
+            raise RuntimeError(message) from exc
 
     def _recv_thread(self):
         while True:
             try:
                 item = self.recv_queue.get()
-            except Exception as e:
-                error_msg = str(e)
-                if "CUDA error: out of memory" in error_msg or "out of memory" in error_msg.lower():
-                    print(f"CUDA OOM error while receiving RPC message: {error_msg}")
-                    # Try to continue receiving other messages
-                    continue
-                else:
-                    print(f"Error receiving RPC message: {error_msg}")
-                    continue
+            except Exception as exc:
+                message = f"📚 [PyIsolate][RPC] Failed receiving message (rpc_id={self.id}): {exc}"
+                logger.exception(message)
+                raise RuntimeError(message) from exc
 
             debugprint("Got recv: ", item)
             if item is None:
@@ -418,34 +398,27 @@ class AsyncRPC:
                 )
                 try:
                     self.send_queue.put(request)
-                except Exception as e:
-                    error_msg = str(e)
-                    if "CUDA error: out of memory" in error_msg or "out of memory" in error_msg.lower():
-                        print(f"CUDA OOM error while sending RPC request for {item['method']}: {error_msg}")
-                        # Set exception on the future to notify the caller
-                        with self.lock:
-                            pending = self.pending.pop(call_id, None)
-                        if pending:
-                            pending["calling_loop"].call_soon_threadsafe(
-                                pending["future"].set_exception,
-                                RuntimeError(f"CUDA out of memory during request transmission: {error_msg}"),
-                            )
-                    else:
-                        print(f"Error sending RPC request: {error_msg}")
-                        # Set exception on the future
-                        with self.lock:
-                            pending = self.pending.pop(call_id, None)
-                        if pending:
-                            pending["calling_loop"].call_soon_threadsafe(pending["future"].set_exception, e)
+                except Exception as exc:
+                    message = (
+                        f"📚 [PyIsolate][RPC] Failed sending RPC request "
+                        f"(rpc_id={self.id}, method={item['method']}): {exc}"
+                    )
+                    with self.lock:
+                        pending = self.pending.pop(call_id, None)
+                    if pending:
+                        pending["calling_loop"].call_soon_threadsafe(
+                            pending["future"].set_exception,
+                            RuntimeError(message),
+                        )
+                    logger.exception(message)
+                    raise RuntimeError(message) from exc
             elif item["kind"] == "response":
                 try:
                     self.send_queue.put(item)
-                except Exception as e:
-                    error_msg = str(e)
-                    if "CUDA error: out of memory" in error_msg or "out of memory" in error_msg.lower():
-                        print(f"CUDA OOM error while sending RPC response: {error_msg}")
-                    else:
-                        print(f"Error sending RPC response: {error_msg}")
+                except Exception as exc:
+                    message = f"📚 [PyIsolate][RPC] Failed relaying response (rpc_id={self.id}): {exc}"
+                    logger.exception(message)
+                    raise RuntimeError(message) from exc
             else:
                 raise ValueError(f"Unknown item type: {type(item)}")
 

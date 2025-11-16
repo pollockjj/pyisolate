@@ -218,10 +218,15 @@ class ExtensionManager(Generic[T]):
         to call this method before shutting down the application to ensure clean
         termination of all extension processes.
         """
+        errors: list[str] = []
         for name, extension in list(self.extensions.items()):
             try:
                 logger.info("📚 [PyIsolate][ExtensionManager] Stopping extension %s", name)
                 extension.stop()
-            except Exception as e:
-                logger.error(f"Error stopping extension {name}: {e}")
+            except Exception as exc:
+                detail = f"Failed stopping {name}: {exc}"
+                logger.error(detail)
+                errors.append(detail)
         self.extensions.clear()
+        if errors:
+            raise RuntimeError("; ".join(errors))

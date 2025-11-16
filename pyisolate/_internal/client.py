@@ -106,7 +106,9 @@ async def async_entrypoint(
             for api in config["apis"]:
                 api.use_remote(rpc)
 
-            sys_module_name = module_path.replace(".", "_x_")
+            # Use just the directory name as the module name to avoid paths in __module__
+            # This prevents pickle errors when classes are serialized across processes
+            sys_module_name = os.path.basename(module_path).replace("-", "_").replace(".", "_")
             module_spec = importlib.util.spec_from_file_location(
                 sys_module_name, os.path.join(module_path, "__init__.py")
             )

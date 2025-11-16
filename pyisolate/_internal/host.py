@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import os
 import re
@@ -6,7 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -253,31 +252,37 @@ class Extension(Generic[T]):
 
     def stop(self) -> None:
         """Stop the extension process and clean up resources."""
-        try:
-            logger.info("📚 [PyIsolate][Extension] Stopping extension %s", self.name)
-            # Terminate the process first to prevent further issues
-            if hasattr(self, "proc") and self.proc.is_alive():
+        logger.info("📚 [PyIsolate][Extension] Stopping extension %s", self.name)
+        errors: list[str] = []
+
+        if hasattr(self, "proc") and self.proc.is_alive():
+            try:
                 self.proc.terminate()
                 self.proc.join(timeout=5.0)
-
-                # Force kill if still alive
                 if self.proc.is_alive():
-                    logger.warning(f"Extension {self.name} did not terminate gracefully, force killing")
+                    logger.warning(
+                        "📚 [PyIsolate][Extension] Force killing hung extension %s", self.name
+                    )
                     self.proc.kill()
                     self.proc.join()
+            except Exception as exc:  # pragma: no cover - depends on multiprocessing edge cases
+                detail = f"Failed to terminate process for {self.name}: {exc}"
+                logger.error(detail)
+                errors.append(detail)
 
-            # Clean up queues
-            if hasattr(self, "to_extension"):
-                with contextlib.suppress(Exception):
-                    self.to_extension.close()
-            if hasattr(self, "from_extension"):
-                with contextlib.suppress(Exception):
-                    self.from_extension.close()
+        for attr_name in ("to_extension", "from_extension"):
+            queue = getattr(self, attr_name, None)
+            if queue is None:
+                continue
+            try:
+                queue.close()
+            except Exception as exc:  # pragma: no cover - depends on multiprocessing edge cases
+                detail = f"Failed to close {attr_name} queue for {self.name}: {exc}"
+                logger.error(detail)
+                errors.append(detail)
 
-        except Exception as e:
-            logger.error(f"Error stopping extension {self.name}: {e}")
-            raise
-
+        if errors:
+            raise RuntimeError("; ".join(errors))
     def __launch(self):
         """
         Launch the extension in a separate process.

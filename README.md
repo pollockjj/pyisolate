@@ -2,13 +2,59 @@
 
 **Run Python extensions in isolated virtual environments with seamless inter-process communication.**
 
-> ⚠️ **Warning**: This library is currently in active development and the API may change. While the core functionality is working, it should not be considered stable for production use yet.
+> 🚨 **Fail Loud Policy**: pyisolate assumes the rest of ComfyUI core is correct. Missing prerequisites or runtime failures immediately raise descriptive exceptions instead of being silently ignored.
 
-pyisolate enables you to run Python extensions with conflicting dependencies in the same application by automatically creating isolated virtual environments for each extension. Extensions communicate with the host process through a transparent RPC system, making the isolation invisible to your code.
+pyisolate enables you to run Python extensions with conflicting dependencies in the same application by automatically creating isolated virtual environments for each extension using `uv`. Extensions communicate with the host process through a transparent RPC system, making the isolation invisible to your code while keeping the host environment dependency-free.
+
+## Requirements
+
+- Python 3.9+
+- The [`uv`](https://github.com/astral-sh/uv) CLI available on your `PATH`
+- `pip`/`venv` for bootstrapping the development environment
+
+## Quick Start
+
+### Option A – run everything for me
+
+```bash
+cd /home/johnj/pyisolate
+./quickstart.sh
+```
+
+The script installs `uv`, creates the dev venv, installs pyisolate in editable mode, runs the multi-extension example, and executes the Comfy Hello World demo.
+
+### Option B – manual setup (5 minutes)
+
+1. **Create the dev environment**
+    ```bash
+    cd /home/johnj/pyisolate
+    uv venv
+    source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+    uv pip install -e ".[dev]"
+    ```
+2. **Run the example extensions**
+    ```bash
+    cd example
+    python main.py
+    cd ..
+    ```
+    Expected output:
+    ```
+    Extension1      | ✓ PASSED      | Data processing with pandas/numpy 1.x
+    Extension2      | ✓ PASSED      | Array processing with numpy 2.x
+    Extension3      | ✓ PASSED      | HTML parsing with BeautifulSoup/scipy
+    ```
+3. **Run the Comfy Hello World**
+    ```bash
+    cd comfy_hello_world
+    python main.py
+    ```
+    You should see the isolated custom node load, execute, and fetch data from the shared singleton service.
 
 ## Documentation
 
-You can find documentation on this library here: https://comfy-org.github.io/pyisolate/
+- Project site: https://comfy-org.github.io/pyisolate/
+- Walkthroughs & architecture notes: see `mysolate/HELLO_WORLD.md` and `mysolate/GETTING_STARTED.md`
 
 ## Key Benefits
 
@@ -64,7 +110,7 @@ async def main():
     manager = pyisolate.ExtensionManager(pyisolate.ExtensionBase, config)
 
     # Load an extension with specific dependencies
-    extension = await manager.load_extension(
+    extension = manager.load_extension(
         pyisolate.ExtensionConfig(
             name="data_processor",
             module_path="./extensions/my_extension",
@@ -100,7 +146,7 @@ class MLExtension(ExtensionBase):
 
 ```python
 # main.py
-extension = await manager.load_extension(
+extension = manager.load_extension(
     pyisolate.ExtensionConfig(
         name="ml_processor",
         module_path="./extensions/ml_extension",

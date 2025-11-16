@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 import os
-import venv
+import sys
 from pathlib import Path
 from typing import Type
+
+import yaml
 
 from pyisolate import ExtensionManager, ExtensionManagerConfig
 from pyisolate.shared import ProxiedSingleton
@@ -22,6 +23,7 @@ except ImportError:  # pragma: no cover - exercised manually
 BASE_DIR = Path(__file__).parent.resolve()
 NODE_NAME = "simple_text_node"
 NODE_DIR = BASE_DIR / "custom_nodes" / NODE_NAME
+MANIFEST_PATH = NODE_DIR / "pyisolate.yaml"
 
 os.environ.setdefault("UV_PIP_DISABLE_EXTERNALLY_MANAGED", "1")
 
@@ -44,25 +46,36 @@ def _load_shared_model_manager() -> Type[ProxiedSingleton]:
 
     return HelloWorldModelManager
 
+def _load_manifest() -> dict:
+    if not MANIFEST_PATH.exists():
+        raise FileNotFoundError(f"Missing manifest: {MANIFEST_PATH}")
+    with MANIFEST_PATH.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if "dependencies" not in data or not data["dependencies"]:
+        raise RuntimeError(f"Manifest must declare dependencies: {MANIFEST_PATH}")
+    return data
+
 
 async def main() -> None:
     print("📦 Loading isolated custom node...")
-    venv_dir = BASE_DIR / "node-venvs" / NODE_NAME
-    if not venv_dir.exists():
-        venv.EnvBuilder(with_pip=True, clear=False).create(venv_dir)
+    venv_root = BASE_DIR / "node-venvs"
+    venv_root.mkdir(exist_ok=True)
+
     manager = ExtensionManager(
         ComfyNodeExtension,
-        ExtensionManagerConfig(venv_root_path=str(BASE_DIR / "node-venvs")),
+        ExtensionManagerConfig(venv_root_path=str(venv_root)),
     )
+
+    manifest = _load_manifest()
     HelloWorldModelManager = _load_shared_model_manager()
     extension = manager.load_extension(
         {
             "name": NODE_NAME,
             "module_path": str(NODE_DIR),
-            "isolated": True,
-            "dependencies": ["requests==2.31.0", "numpy>=2.0.0"],
+            "isolated": bool(manifest.get("isolated", True)),
+            "dependencies": manifest["dependencies"],
             "apis": [HelloWorldModelManager],
-            "share_torch": False,
+            "share_torch": bool(manifest.get("share_torch", False)),
         }
     )
 
