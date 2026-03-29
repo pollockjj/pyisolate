@@ -11,12 +11,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-import sys
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib  # type: ignore[no-redef]
 import torch  # noqa: E402
 
 from pyisolate._internal.host import Extension  # noqa: E402
@@ -41,29 +35,24 @@ def _shm_snapshot() -> set[str]:
 
 
 def _build_conda_config(fixture_path: Path, run_dir: Path) -> dict:
-    manifest_path = fixture_path / "pyproject.toml"
-    with manifest_path.open("rb") as handle:
-        manifest = tomllib.load(handle)
-
-    project = manifest["project"]
-    isolation = manifest["tool"]["pyisolate"]
+    # Inlined from fixtures/conda_sealed_node/pyproject.toml — no TOML parser needed.
     return {
-        "name": project["name"],
+        "name": "conda-sealed-node",
         "module_path": str(fixture_path),
         "isolated": True,
-        "dependencies": project["dependencies"],
+        "dependencies": ["packaging"],
         "apis": [],
         "env": {
             "PYISOLATE_ARTIFACT_DIR": str(run_dir / "artifacts"),
             "PYISOLATE_SIGNAL_CLEANUP": "1",
         },
-        "share_torch": isolation["share_torch"],
+        "share_torch": False,
         "share_cuda_ipc": False,
         "sandbox": {"writable_paths": [str(run_dir / "artifacts")]},
-        "package_manager": isolation["package_manager"],
-        "execution_model": isolation.get("execution_model", "sealed_worker"),
-        "conda_channels": isolation["conda_channels"],
-        "conda_dependencies": isolation["conda_dependencies"],
+        "package_manager": "conda",
+        "execution_model": "sealed_worker",
+        "conda_channels": ["conda-forge"],
+        "conda_dependencies": ["boltons"],
     }
 
 
