@@ -85,7 +85,12 @@ async def test_uv_sealed_runtime_uses_toolkit_fixture_without_host_leakage() -> 
         with pytest.MonkeyPatch.context() as monkeypatch:
             monkeypatch.setenv("PATH", uv_path)
             monkeypatch.setenv("PYISOLATE_ARTIFACT_DIR", str(run_dir / "artifacts"))
-            ext.ensure_process_started()
+            try:
+                ext.ensure_process_started()
+            except RuntimeError as exc:
+                if "bubblewrap" in str(exc).lower():
+                    pytest.skip(f"bwrap unavailable on this platform: {exc}")
+                raise
         proxy = ext.get_proxy()
 
         nodes = await proxy.list_nodes()
