@@ -50,7 +50,8 @@ class TestCondaShareTorchRaises:
 
 
 class TestCondaCudaWheelsAllowed:
-    def test_conda_cuda_wheels_allowed(self):
+    @patch("shutil.which", return_value="/usr/bin/pixi")
+    def test_conda_cuda_wheels_allowed(self, _mock_which):
         """conda + cuda_wheels is valid — pixi resolves via [pypi-options]."""
         config = _make_config(
             package_manager="conda",

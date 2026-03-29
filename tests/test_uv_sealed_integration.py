@@ -19,8 +19,12 @@ from pyisolate.sealed import SealedNodeExtension  # noqa: E402
 
 UV_BIN = Path(sys.executable).with_name("uv.exe" if os.name == "nt" else "uv")
 UV_AVAILABLE = shutil.which("uv") is not None or UV_BIN.exists()
+BWRAP_AVAILABLE = os.name == "nt" or shutil.which("bwrap") is not None
 
-pytestmark = pytest.mark.skipif(not UV_AVAILABLE, reason="uv not on PATH")
+pytestmark = [
+    pytest.mark.skipif(not UV_AVAILABLE, reason="uv not on PATH"),
+    pytest.mark.skipif(not BWRAP_AVAILABLE, reason="bwrap not on PATH"),
+]
 
 
 def _fixture_path() -> Path:
