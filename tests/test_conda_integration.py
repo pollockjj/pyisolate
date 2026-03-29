@@ -11,7 +11,12 @@ import uuid
 from pathlib import Path
 
 import pytest
-import tomllib
+import sys
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # type: ignore[no-redef]
 import torch  # noqa: E402
 
 from pyisolate._internal.host import Extension  # noqa: E402
