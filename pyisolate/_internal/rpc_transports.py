@@ -176,6 +176,7 @@ class JSONSocketTransport:
     def close(self) -> None:
         """Close the underlying socket."""
         import socket as _socket
+
         with contextlib.suppress(Exception):
             self._sock.shutdown(_socket.SHUT_RDWR)
         with contextlib.suppress(Exception):

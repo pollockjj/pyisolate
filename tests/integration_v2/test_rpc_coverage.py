@@ -33,7 +33,6 @@ def host():
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Extension loading requires Linux UDS")
 class TestTorchShareRPC:
-
     def test_torch_share_singleton_roundtrip(self, host: ReferenceHost):
         """Load a torch_share extension and verify RPC round-trip.
 
@@ -52,7 +51,6 @@ class TestTorchShareRPC:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Extension loading requires Linux UDS")
 class TestSealedWorkerRPC:
-
     def test_sealed_worker_singleton_roundtrip(self, host: ReferenceHost):
         """Load a sealed_worker extension and verify RPC round-trip.
 
@@ -69,6 +67,7 @@ class TestSealedWorkerRPC:
         package_path = Path(ReferenceTestExtension.__module__.replace(".", "/")).resolve()
         # Use the test_package path from the harness
         import tests.harness.test_package as tp
+
         package_path = str(Path(tp.__file__).parent.resolve())
 
         config = ExtensionConfig(
@@ -100,10 +99,10 @@ class TestSealedWorkerRPC:
 
 @pytest.mark.skipif(sys.platform != "linux", reason="bwrap requires Linux")
 class TestBwrapTorchShareRPC:
-
     def test_bwrap_torch_share_roundtrip(self, host: ReferenceHost):
         """Load a bwrap + torch_share extension and verify RPC round-trip."""
         from pyisolate._internal.sandbox_detect import detect_sandbox_capability
+
         cap = detect_sandbox_capability()
         if not cap.available:
             pytest.skip(f"bwrap not available: {cap.restriction_model}")
@@ -116,5 +115,3 @@ class TestBwrapTorchShareRPC:
         proxy = ext.get_proxy()
         result = _run(proxy.ping())
         assert result == "pong"
-
-
