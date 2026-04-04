@@ -4,12 +4,11 @@ import inspect
 import logging
 import os
 import sys
-from typing import TypedDict, cast
 
-import yaml
 from shared import DatabaseSingleton, ExampleExtensionBase
 
 import pyisolate
+from pyisolate import ExtensionConfig
 from pyisolate._internal.sandbox_detect import detect_sandbox_capability
 
 
@@ -39,6 +38,27 @@ def setup_logging(verbose: bool = False):
 logger = logging.getLogger(__name__)
 
 
+# Extension configurations — inline ExtensionConfig construction.
+# Each extension gets its own isolated venv with specific dependencies.
+EXTENSION_CONFIGS = {
+    "extension1": {
+        "isolated": True,
+        "share_torch": False,
+        "dependencies": ["numpy>=1.21.0,<2.0.0", "pandas>=1.3.0"],
+    },
+    "extension2": {
+        "isolated": True,
+        "share_torch": False,
+        "dependencies": ["numpy>=2.0.0", "requests>=2.28.0"],
+    },
+    "extension3": {
+        "isolated": True,
+        "share_torch": False,
+        "dependencies": ["scipy>=1.10.0", "beautifulsoup4>=4.12.0", "numpy>=1.21.0"],
+    },
+}
+
+
 async def async_main():
     # Since this is just an example, we'll install `pyisolate` in edit mode
     pyisolate_dir = os.path.dirname(os.path.dirname(os.path.realpath(pyisolate.__file__)))
@@ -61,48 +81,31 @@ async def async_main():
 
     extensions: list[ExampleExtensionBase] = []
     extension_dir = os.path.join(base_path, "extensions")
-    for extension in os.listdir(extension_dir):
-        if os.path.isdir(os.path.join(extension_dir, extension)):
-            module_path = os.path.join(extension_dir, extension)
 
-            yaml_path = os.path.join(module_path, "manifest.yaml")
+    pyisolate_install = [
+        "-e",
+        pyisolate_dir,
+    ]
 
-            class CustomConfig(TypedDict):
-                enabled: bool
-                isolated: bool
-                dependencies: list[str]
-                share_torch: bool
+    for extension_name, ext_config in sorted(EXTENSION_CONFIGS.items()):
+        module_path = os.path.join(extension_dir, extension_name)
+        if not os.path.isdir(module_path):
+            logger.warning(f"Extension directory not found: {module_path}")
+            continue
 
-            # Load the extension configuration from a YAML file
-            with open(yaml_path) as f:
-                manifest = cast(CustomConfig, yaml.safe_load(f))
+        config = ExtensionConfig(
+            name=extension_name,
+            module_path=module_path,
+            isolated=ext_config["isolated"],
+            dependencies=ext_config["dependencies"] + pyisolate_install,
+            apis=[DatabaseSingleton],
+            share_torch=ext_config["share_torch"],
+            sandbox_mode=sandbox_mode,
+        )
 
-            # Skip disabled extensions
-            if not manifest.get("enabled", True):
-                logger.info(f"Skipping disabled extension: {extension}")
-                continue
-
-            # On Windows, edit mode doesn't really work.
-            # pyisolate_install = [ pyisolate_dir ] if os.name == "nt" else [ "-e", pyisolate_dir, ]
-            pyisolate_install = [
-                "-e",
-                pyisolate_dir,
-            ]
-
-            # Each extension can have its own configuration and dependencies
-            config = pyisolate.ExtensionConfig(
-                name=extension,
-                module_path=module_path,
-                isolated=manifest["isolated"],
-                dependencies=manifest["dependencies"] + pyisolate_install,
-                apis=[DatabaseSingleton],
-                share_torch=manifest["share_torch"],
-                sandbox_mode=sandbox_mode,
-            )
-
-            extension = manager.load_extension(config)
-            extensions.append(extension)
-            logger.debug(f"Loaded extension: {extension}")
+        extension = manager.load_extension(config)
+        extensions.append(extension)
+        logger.debug(f"Loaded extension: {extension}")
 
     # Execute extensions
     logger.debug("Executing extensions...")
