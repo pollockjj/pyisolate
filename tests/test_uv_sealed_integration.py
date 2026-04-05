@@ -96,7 +96,10 @@ async def test_uv_sealed_runtime_uses_toolkit_fixture_without_host_leakage() -> 
                     pytest.skip(f"bwrap unavailable on this platform: {exc}")
                 raise
             # Verify pyisolate was installed in the child venv from the published index
-            child_python = Path(ext.venv_path) / "bin" / "python3"
+            if os.name == "nt":
+                child_python = Path(ext.venv_path) / "Scripts" / "python.exe"
+            else:
+                child_python = Path(ext.venv_path) / "bin" / "python3"
             pip_show = subprocess.run(
                 [str(child_python), "-m", "pip", "show", "pyisolate"],
                 capture_output=True,
