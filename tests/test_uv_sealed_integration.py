@@ -99,7 +99,9 @@ async def test_uv_sealed_runtime_uses_toolkit_fixture_without_host_leakage() -> 
             child_python = Path(ext.venv_path) / "bin" / "python3"
             pip_show = subprocess.run(
                 [str(child_python), "-m", "pip", "show", "pyisolate"],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             print(f"child venv pyisolate install:\n{pip_show.stdout}")
             assert "pyisolate" in pip_show.stdout, "pyisolate not installed in child venv"
