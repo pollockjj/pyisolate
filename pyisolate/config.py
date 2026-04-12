@@ -113,6 +113,3 @@ class ExtensionConfig(TypedDict):
 
     cuda_wheels: NotRequired[CUDAWheelConfig]
     """Optional custom CUDA wheel resolution configuration for selected dependencies."""
-
-    extra_index_urls: NotRequired[list[str]]
-    """Extra PyPI index URLs passed as ``--extra-index-url`` to ``uv pip install``."""
