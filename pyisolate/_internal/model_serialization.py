@@ -39,16 +39,23 @@ def _serialize_for_isolation_impl(
     if isinstance(handle, remote_handle_type):
         return handle
 
-    serializer = registry.get_serializer(type_name)
-    if serializer is not None:
-        return serializer(data)
-
+    # Handle torch tensors BEFORE the registry's mode-bound "Tensor" serializer so the
+    # per-channel transport mode (JSONSocketTransport._tensor_transport) decides the wire
+    # format -- not the process-global registry mode. Otherwise a host running a
+    # shared_memory (share_torch) extension alongside a json (sealed/conda) extension emits
+    # a shared-memory TensorRef onto the json channel, which a torch-free sealed worker
+    # cannot decode (KeyError 'data'). Returning the tensor here defers encoding to the
+    # transport, which already serializes per channel via serialize_tensor(mode=...).
     if torch_module is not None and isinstance(data, torch_module.Tensor):
         if data.is_cuda:
             if _cuda_ipc_enabled:
                 return data
             return data.cpu()
         return data
+
+    serializer = registry.get_serializer(type_name)
+    if serializer is not None:
+        return serializer(data)
 
     if isinstance(data, dict):
         return {
