@@ -18,6 +18,7 @@ import logging
 import queue
 import threading
 import uuid
+import warnings
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
@@ -162,7 +163,27 @@ class AsyncRPC:
 
         self.lock = threading.Lock()
         self.pending: dict[int, RPCPendingRequest] = {}
-        self.default_loop = asyncio.get_event_loop()
+        # Acquire the loop without raising when constructed outside a running loop.
+        # Python >=3.10 deprecated and >=3.12 removed implicit main-thread event loop
+        # creation, so an eager asyncio.get_event_loop() raised here in sync construction
+        # paths. Preserve the historical get_event_loop() semantics: prefer the running
+        # loop, then the thread's installed loop (set via asyncio.set_event_loop, e.g. a
+        # synchronous caller that constructs the RPC before running its own loop), and only
+        # create+install a new loop as a last resort. update_event_loop() may replace it.
+        try:
+            self.default_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop. Reuse the thread's installed loop if present, else install a
+            # fresh one. asyncio.get_event_loop() returns an installed loop, and only emits
+            # the "no current event loop" DeprecationWarning (Python >=3.12) when none is
+            # installed -- we handle creation explicitly, so that one warning is silenced.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                try:
+                    self.default_loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    self.default_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self.default_loop)
         self._loop_lock = threading.Lock()  # Protects default_loop updates
         self.callees: dict[str, object] = {}
         self.callbacks: dict[str, Any] = {}
