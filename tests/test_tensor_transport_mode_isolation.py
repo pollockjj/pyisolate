@@ -47,6 +47,50 @@ def test_serialize_for_isolation_defers_tensor_to_per_channel_transport() -> Non
     assert not (isinstance(out, dict) and out.get("__type__") == "TensorRef")
 
 
+def test_serialize_for_isolation_reads_cuda_ipc_env_at_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CUDA-IPC decision in serialize_for_isolation must be evaluated at call time,
+    not captured at import.
+
+    Regression: a module-level _cuda_ipc_enabled snapshot, consulted before the registry
+    serializer, was stale because the host sets PYISOLATE_ENABLE_CUDA_IPC during
+    _initialize_process -- after this module is imported. With CUDA IPC configured it
+    therefore sent obj.cpu() instead of deferring the on-device tensor to the per-channel
+    CUDA IPC transport, silently losing CUDA transport. A fake on-device tensor isolates
+    the env decision without requiring a GPU.
+    """
+    from pyisolate._internal.model_serialization import _serialize_for_isolation_impl
+    from pyisolate._internal.remote_handle import RemoteObjectHandle
+    from pyisolate._internal.serialization_registry import SerializerRegistry
+
+    class FakeCudaTensor:
+        is_cuda = True
+
+        def cpu(self) -> str:
+            return "DOWNGRADED_TO_CPU"
+
+    class FakeTorch:
+        Tensor = FakeCudaTensor
+
+    tensor = FakeCudaTensor()
+    registry = SerializerRegistry()
+
+    def _serialize() -> object:
+        return _serialize_for_isolation_impl(
+            tensor,
+            registry=registry,
+            torch_module=FakeTorch,
+            remote_handle_type=RemoteObjectHandle,
+        )
+
+    # CUDA IPC configured at runtime -> defer the on-device tensor (do NOT downgrade).
+    monkeypatch.setenv("PYISOLATE_ENABLE_CUDA_IPC", "1")
+    assert _serialize() is tensor
+
+    # CUDA IPC not configured -> fall back to CPU.
+    monkeypatch.delenv("PYISOLATE_ENABLE_CUDA_IPC", raising=False)
+    assert _serialize() == "DOWNGRADED_TO_CPU"
+
+
 def test_prepare_for_rpc_defers_tensor_to_per_channel_transport() -> None:
     """_prepare_for_rpc_impl (the RPC argument pre-pass) must likewise defer torch tensors
     instead of pre-encoding them with the global registry mode. This is the path that

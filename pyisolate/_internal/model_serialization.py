@@ -12,13 +12,10 @@ coupling pyisolate to any specific framework.
 
 import logging
 import os
-import sys
 from typing import TYPE_CHECKING, Any
 
 from .serialization_registry import SerializerRegistry
 from .torch_gate import get_torch_optional
-
-_cuda_ipc_enabled = sys.platform == "linux" and os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1"
 
 if TYPE_CHECKING:  # pragma: no cover - typing aids
     pass  # type: ignore[import-not-found]
@@ -48,7 +45,11 @@ def _serialize_for_isolation_impl(
     # transport, which already serializes per channel via serialize_tensor(mode=...).
     if torch_module is not None and isinstance(data, torch_module.Tensor):
         if data.is_cuda:
-            if _cuda_ipc_enabled:
+            # Read the CUDA IPC env at call time, not import time: the host sets
+            # PYISOLATE_ENABLE_CUDA_IPC during _initialize_process, after this module is
+            # imported, so an import-time snapshot would be stale and downgrade configured
+            # CUDA tensors to CPU. Matches rpc_serialization._prepare_for_rpc_impl.
+            if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1":
                 return data
             return data.cpu()
         return data
