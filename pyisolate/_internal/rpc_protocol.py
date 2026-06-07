@@ -169,7 +169,8 @@ class AsyncRPC:
         # paths. Preserve the historical get_event_loop() semantics: prefer the running
         # loop, then the thread's installed loop (set via asyncio.set_event_loop, e.g. a
         # synchronous caller that constructs the RPC before running its own loop), and only
-        # create+install a new loop as a last resort. update_event_loop() may replace it.
+        # create+install a new loop as a last resort. update_event_loop() may replace it,
+        # and run() rebinds to the running loop when started inside one.
         try:
             self.default_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -370,6 +371,22 @@ class AsyncRPC:
             )
 
     def run(self) -> None:
+        # Bind dispatch to the loop that actually services it. _recv_thread
+        # dispatches inbound calls via run_coroutine_threadsafe(default_loop),
+        # which executes only on a *running* loop. run() starts those threads, so
+        # when invoked from within a running loop -- the supported pattern
+        # (ensure_process_started()/run_until_stopped() under asyncio.run) -- that
+        # running loop is the authoritative dispatch target and supersedes any loop
+        # __init__ acquired before the loop existed. Mirrors _get_valid_loop()'s
+        # running-loop capture; a fully synchronous caller with no running loop must
+        # call update_event_loop() once its loop starts.
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        if running_loop is not None:
+            with self._loop_lock:
+                self.default_loop = running_loop
         self.blocking_future = self.default_loop.create_future()
         self._threads = [
             threading.Thread(target=self._recv_thread, daemon=True),

@@ -221,6 +221,49 @@ class TestEventLoopResilience:
             if created is not None and created is not previous_loop:
                 created.close()
 
+    def test_run_rebinds_dispatch_to_running_loop(self) -> None:
+        """run() binds default_loop to the running loop that services dispatch.
+
+        AsyncRPC may be constructed before the loop that will run it exists (the
+        synchronous host launch path), so __init__ can only install a placeholder
+        loop. _recv_thread dispatches inbound calls via
+        run_coroutine_threadsafe(default_loop), which executes only on a *running*
+        loop; a placeholder nobody runs would hang every inbound child->host call.
+        run() therefore adopts the running loop before starting the dispatch
+        threads. Guards the regression where a never-run fallback loop is used as
+        the dispatch target on the Python >=3.12 sync-host path.
+        """
+        import queue
+
+        from pyisolate._internal.rpc_protocol import AsyncRPC
+
+        try:
+            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+
+        # Construct with no running/installed loop so default_loop is a placeholder
+        # distinct from the loop run() will later execute under.
+        asyncio.set_event_loop(None)
+        recv_q: queue.Queue[Any] = queue.Queue()
+        recv_q.put(None)  # makes _recv_thread exit cleanly right after run()
+        rpc = AsyncRPC(recv_queue=cast(Any, recv_q), send_queue=cast(Any, queue.Queue()))
+        placeholder = rpc.default_loop
+
+        async def _run_inside_loop() -> asyncio.AbstractEventLoop:
+            rpc.run()
+            return asyncio.get_running_loop()
+
+        try:
+            running = asyncio.run(_run_inside_loop())
+            assert rpc.default_loop is running
+            assert rpc.default_loop is not placeholder
+        finally:
+            rpc.shutdown()
+            asyncio.set_event_loop(previous_loop)
+            if not placeholder.is_closed():
+                placeholder.close()
+
     def test_singleton_data_persists_across_loops(self) -> None:
         """Data stored in singleton persists across event loops."""
         try:
