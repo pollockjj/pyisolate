@@ -258,6 +258,8 @@ class TestEventLoopResilience:
             running = asyncio.run(_run_inside_loop())
             assert rpc.default_loop is running
             assert rpc.default_loop is not placeholder
+            # The created fallback loop is closed when superseded -- no leaked loop.
+            assert placeholder.is_closed()
         finally:
             rpc.shutdown()
             asyncio.set_event_loop(previous_loop)

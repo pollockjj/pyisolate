@@ -163,6 +163,10 @@ class AsyncRPC:
 
         self.lock = threading.Lock()
         self.pending: dict[int, RPCPendingRequest] = {}
+        # Set only when the last-resort branch below creates a loop we own, so run()/
+        # update_event_loop() can close it if a real loop later supersedes it (avoids a
+        # leaked, never-run event loop -> ResourceWarning: unclosed event loop).
+        self._created_default_loop: asyncio.AbstractEventLoop | None = None
         # Acquire the loop without raising when constructed outside a running loop.
         # Python >=3.10 deprecated and >=3.12 removed implicit main-thread event loop
         # creation, so an eager asyncio.get_event_loop() raised here in sync construction
@@ -185,6 +189,7 @@ class AsyncRPC:
                 except RuntimeError:
                     self.default_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(self.default_loop)
+                    self._created_default_loop = self.default_loop
         self._loop_lock = threading.Lock()  # Protects default_loop updates
         self.callees: dict[str, object] = {}
         self.callbacks: dict[str, Any] = {}
@@ -231,8 +236,24 @@ class AsyncRPC:
         with self._loop_lock:
             if loop is None:
                 loop = asyncio.get_event_loop()
+            self._release_created_loop_if_superseded(loop)
             self.default_loop = loop
             logger.debug(f"RPC {self.id}: Updated default_loop to {loop}")
+
+    def _release_created_loop_if_superseded(self, new_loop: asyncio.AbstractEventLoop) -> None:
+        """Close the fallback loop __init__ created if a different loop supersedes it.
+
+        Caller must hold self._loop_lock. __init__ creates and installs a new event loop
+        only as a last resort (no running or installed loop). When run() or
+        update_event_loop() later binds dispatch to a different, real loop, that created
+        loop would otherwise be left open and unused -- a leaked event loop that emits
+        ResourceWarning. We own it, so we close it on supersession.
+        """
+        created = self._created_default_loop
+        if created is not None and created is not new_loop:
+            if not created.is_closed():
+                created.close()
+            self._created_default_loop = None
 
     def register_callback(self, func: Any) -> str:
         callback_id = str(uuid.uuid4())
@@ -386,6 +407,7 @@ class AsyncRPC:
             running_loop = None
         if running_loop is not None:
             with self._loop_lock:
+                self._release_created_loop_if_superseded(running_loop)
                 self.default_loop = running_loop
         self.blocking_future = self.default_loop.create_future()
         self._threads = [
