@@ -136,6 +136,91 @@ class TestEventLoopResilience:
             elif not loop1.is_closed():
                 loop1.close()
 
+    def test_asyncrpc_constructs_without_current_event_loop(self) -> None:
+        """AsyncRPC must construct when no current event loop exists.
+
+        The host launches extensions from a synchronous path (host._launch_with_uds),
+        constructing AsyncRPC outside any running loop. Python >=3.12 removed implicit
+        main-thread loop creation, so an eager asyncio.get_event_loop() in __init__
+        raised "There is no current event loop". This guards that regression.
+        """
+        import queue
+
+        from pyisolate._internal.rpc_protocol import AsyncRPC
+
+        try:
+            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+
+        asyncio.set_event_loop(None)
+        rpc = None
+        try:
+            rpc = AsyncRPC(recv_queue=cast(Any, queue.Queue()), send_queue=cast(Any, queue.Queue()))
+            assert isinstance(rpc.default_loop, asyncio.AbstractEventLoop)
+            assert not rpc.default_loop.is_closed()
+        finally:
+            created = rpc.default_loop if rpc is not None else None
+            asyncio.set_event_loop(previous_loop)
+            if created is not None and created is not previous_loop:
+                created.close()
+
+    def test_asyncrpc_reuses_preset_thread_loop(self) -> None:
+        """AsyncRPC must adopt the thread's installed (set-but-not-running) loop.
+
+        A synchronous caller may create a loop, install it via asyncio.set_event_loop(),
+        construct AsyncRPC, then drive that loop. __init__ must adopt the installed loop
+        (matching historical asyncio.get_event_loop() behavior) instead of creating a
+        separate loop that rpc.run()/dispatch would schedule on but nobody runs.
+        """
+        import queue
+
+        from pyisolate._internal.rpc_protocol import AsyncRPC
+
+        try:
+            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+
+        installed = asyncio.new_event_loop()
+        asyncio.set_event_loop(installed)
+        try:
+            rpc = AsyncRPC(recv_queue=cast(Any, queue.Queue()), send_queue=cast(Any, queue.Queue()))
+            assert rpc.default_loop is installed
+        finally:
+            asyncio.set_event_loop(previous_loop)
+            installed.close()
+
+    def test_asyncrpc_construction_emits_no_deprecation_warning(self) -> None:
+        """AsyncRPC construction must not leak a 'no current event loop' DeprecationWarning.
+
+        The fix for the >=3.12 get_event_loop() crash must not itself emit the very
+        deprecation it works around. Treats DeprecationWarning as an error while
+        constructing with no installed loop.
+        """
+        import queue
+        import warnings
+
+        from pyisolate._internal.rpc_protocol import AsyncRPC
+
+        try:
+            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+
+        asyncio.set_event_loop(None)
+        rpc = None
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", DeprecationWarning)
+                rpc = AsyncRPC(recv_queue=cast(Any, queue.Queue()), send_queue=cast(Any, queue.Queue()))
+            assert isinstance(rpc.default_loop, asyncio.AbstractEventLoop)
+        finally:
+            created = rpc.default_loop if rpc is not None else None
+            asyncio.set_event_loop(previous_loop)
+            if created is not None and created is not previous_loop:
+                created.close()
+
     def test_singleton_data_persists_across_loops(self) -> None:
         """Data stored in singleton persists across event loops."""
         try:
