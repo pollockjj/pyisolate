@@ -27,7 +27,7 @@ class TestEventBridgeDispatch:
             received.append(payload)
 
         bridge.register_handler("progress", handler)
-        asyncio.get_event_loop().run_until_complete(bridge.dispatch("progress", {"value": 5, "total": 10}))
+        asyncio.run(bridge.dispatch("progress", {"value": 5, "total": 10}))
 
         assert len(received) == 1
         assert received[0] == {"value": 5, "total": 10}
@@ -37,7 +37,7 @@ class TestEventBridgeDispatch:
         bridge = _EventBridge()
 
         with pytest.raises(ValueError, match="No handler registered for event 'unknown_event'"):
-            asyncio.get_event_loop().run_until_complete(bridge.dispatch("unknown_event", {}))
+            asyncio.run(bridge.dispatch("unknown_event", {}))
 
     def test_emit_event_rejects_non_json_payload(self) -> None:
         """emit_event with non-JSON-serializable payload raises immediately."""
@@ -62,7 +62,7 @@ class TestEventBridgeDispatch:
             received.append(payload)
 
         bridge.register_handler("test", async_handler)
-        asyncio.get_event_loop().run_until_complete(bridge.dispatch("test", {"key": "value"}))
+        asyncio.run(bridge.dispatch("test", {"key": "value"}))
 
         assert received == [{"key": "value"}]
 
@@ -75,8 +75,8 @@ class TestEventBridgeDispatch:
         bridge.register_handler("progress", lambda p: progress_calls.append(p))
         bridge.register_handler("preview", lambda p: preview_calls.append(p))
 
-        asyncio.get_event_loop().run_until_complete(bridge.dispatch("progress", {"value": 1}))
-        asyncio.get_event_loop().run_until_complete(bridge.dispatch("preview", {"image": "data"}))
+        asyncio.run(bridge.dispatch("progress", {"value": 1}))
+        asyncio.run(bridge.dispatch("preview", {"image": "data"}))
 
         assert progress_calls == [{"value": 1}]
         assert preview_calls == [{"image": "data"}]
