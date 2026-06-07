@@ -264,10 +264,14 @@ def _prepare_for_rpc_impl(
     torch_module: Any,
 ) -> Any:
     obj_type = type(obj)
-    serializer = _resolve_serializer_for_type(registry, obj_type)
-    if serializer is not None:
-        return serializer(obj)
 
+    # Handle torch tensors BEFORE the registry's mode-bound "Tensor" serializer so the
+    # per-channel transport mode (JSONSocketTransport._tensor_transport) decides the wire
+    # format -- not the process-global registry mode. Otherwise a host running a
+    # shared_memory (share_torch) extension alongside a json (sealed/conda) extension emits
+    # a shared-memory TensorRef onto the json channel, which a torch-free sealed worker
+    # cannot decode (KeyError 'data'). Returning the tensor here defers encoding to the
+    # transport, whose _json_default serializes per channel via serialize_tensor(mode=...).
     if torch_module is not None and isinstance(obj, torch_module.Tensor):
         if obj.is_cuda:
             if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1":
@@ -276,6 +280,10 @@ def _prepare_for_rpc_impl(
             _ipc_metrics["send_cuda_fallback"] += 1
             return obj.cpu()
         return obj
+
+    serializer = _resolve_serializer_for_type(registry, obj_type)
+    if serializer is not None:
+        return serializer(obj)
 
     if isinstance(obj, dict):
         return {
