@@ -25,13 +25,23 @@ class DummyExtension(ExtensionBase):
         assert hasattr(module, "VALUE")
 
 
-@pytest.mark.asyncio
-async def test_async_entrypoint_runs_hooks_and_registers(tmp_path: Any, monkeypatch: Any) -> Any:
-    module_dir = tmp_path / "ext"
-    module_dir.mkdir()
-    (module_dir / "__init__.py").write_text("VALUE = 42\n")
+class FakeRPC:
+    def __init__(self, recv_queue: Any = None, send_queue: Any = None) -> None:  # noqa: ARG002
+        self.registered: list[tuple[Any, Any]] = []
+        self.running = False
 
-    config: ExtensionConfig = {
+    def register_callee(self, obj: Any = None, object_id: Any = None) -> None:
+        self.registered.append((obj, object_id))
+
+    def run(self) -> None:
+        self.running = True
+
+    async def run_until_stopped(self) -> Any:
+        return None
+
+
+def _config(**overrides: Any) -> ExtensionConfig:
+    base: dict[str, Any] = {
         "name": "demo",
         "isolated": True,
         "dependencies": [],
@@ -39,25 +49,17 @@ async def test_async_entrypoint_runs_hooks_and_registers(tmp_path: Any, monkeypa
         "share_cuda_ipc": False,
         "apis": [],
     }
+    return cast(ExtensionConfig, {**base, **overrides})
 
-    class FakeRPC:
-        def __init__(self, recv_queue: Any = None, send_queue: Any = None) -> None:  # noqa: ARG002
-            self.registered: list[tuple[Any, Any]] = []
-            self.running = False
 
-        def register_callee(self, obj: Any, object_id: Any) -> None:
-            self.registered.append((obj, object_id))
+def _make_module(tmp_path: Any, name: str, value: int) -> Any:
+    module_dir = tmp_path / name
+    module_dir.mkdir()
+    (module_dir / "__init__.py").write_text(f"VALUE = {value}\n")
+    return module_dir
 
-        def run(self) -> None:
-            self.running = True
 
-        async def run_until_stopped(self) -> Any:
-            return None
-
-    monkeypatch.setattr(client, "AsyncRPC", FakeRPC)
-
-    ext = DummyExtension()
-
+async def _run(module_dir: Any, ext: Any, config: ExtensionConfig) -> None:
     await client.async_entrypoint(
         module_path=str(module_dir),
         extension_type=lambda: ext,  # type: ignore[arg-type]
@@ -67,27 +69,25 @@ async def test_async_entrypoint_runs_hooks_and_registers(tmp_path: Any, monkeypa
         log_queue=None,
     )
 
+
+@pytest.mark.asyncio
+async def test_async_entrypoint_runs_hooks_and_registers(tmp_path: Any, monkeypatch: Any) -> Any:
+    module_dir = _make_module(tmp_path, "ext", 42)
+    monkeypatch.setattr(client, "AsyncRPC", FakeRPC)
+    ext = DummyExtension()
+    await _run(module_dir, ext, _config())
     assert ext.before_called is True
     assert ext.loaded_called is True
 
 
 @pytest.mark.asyncio
 async def test_async_entrypoint_rejects_missing_dir(tmp_path: Any) -> None:
-    config: ExtensionConfig = {
-        "name": "demo",
-        "isolated": True,
-        "dependencies": [],
-        "share_torch": False,
-        "share_cuda_ipc": False,
-        "apis": [],
-    }
-
     bogus = tmp_path / "notadir"
     with pytest.raises(ValueError):
         await client.async_entrypoint(
             module_path=str(bogus),
             extension_type=DummyExtension,
-            config=config,
+            config=_config(),
             to_extension=None,
             from_extension=None,
             log_queue=None,
@@ -96,10 +96,7 @@ async def test_async_entrypoint_rejects_missing_dir(tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_async_entrypoint_uses_inference_mode(monkeypatch: Any, tmp_path: Any) -> Any:
-    module_dir = tmp_path / "ext2"
-    module_dir.mkdir()
-    (module_dir / "__init__.py").write_text("VALUE = 1\n")
-
+    module_dir = _make_module(tmp_path, "ext2", 1)
     entered = {"count": 0}
 
     class DummyInference:
@@ -107,7 +104,7 @@ async def test_async_entrypoint_uses_inference_mode(monkeypatch: Any, tmp_path: 
             entered["count"] += 1
             return self
 
-        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Any:  # noqa: ANN001
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Any:
             return False
 
     class DummyTorch:
@@ -115,55 +112,21 @@ async def test_async_entrypoint_uses_inference_mode(monkeypatch: Any, tmp_path: 
             return DummyInference()
 
     monkeypatch.setitem(sys.modules, "torch", DummyTorch())
-
-    config: ExtensionConfig = {
-        "name": "demo2",
-        "isolated": True,
-        "dependencies": [],
-        "share_torch": True,
-        "share_cuda_ipc": False,
-        "apis": [],
-    }
-
-    class FakeRPC:
-        def __init__(self, recv_queue: Any = None, send_queue: Any = None) -> None:  # noqa: ARG002
-            pass
-
-        def register_callee(self, *_: Any) -> Any:
-            return None
-
-        def run(self) -> Any:
-            return None
-
-        async def run_until_stopped(self) -> Any:
-            return None
-
     monkeypatch.setattr(client, "AsyncRPC", FakeRPC)
-
     ext = DummyExtension()
-    await client.async_entrypoint(
-        module_path=str(module_dir),
-        extension_type=lambda: ext,  # type: ignore[arg-type]
-        config=config,
-        to_extension=None,
-        from_extension=None,
-        log_queue=None,
-    )
-
+    await _run(module_dir, ext, _config(name="demo2", share_torch=True))
     assert entered["count"] == 1
 
 
 @pytest.mark.asyncio
 async def test_async_entrypoint_registers_apis_with_adapter(monkeypatch: Any, tmp_path: Any) -> Any:
-    module_dir = tmp_path / "ext3"
-    module_dir.mkdir()
-    (module_dir / "__init__.py").write_text("VALUE = 3\n")
+    module_dir = _make_module(tmp_path, "ext3", 3)
 
     class DummyAPI(ProxiedSingleton):
         last_rpc: Any = None
 
         @classmethod
-        def use_remote(cls, rpc: Any) -> None:  # noqa: ANN001
+        def use_remote(cls, rpc: Any) -> None:
             cls.last_rpc = rpc
 
     class DummyAdapter:
@@ -175,59 +138,15 @@ async def test_async_entrypoint_registers_apis_with_adapter(monkeypatch: Any, tm
 
     dummy_adapter = DummyAdapter()
     monkeypatch.setattr(client, "_adapter", dummy_adapter)
-
-    class FakeRPC:
-        def __init__(self, recv_queue: Any = None, send_queue: Any = None) -> None:  # noqa: ARG002
-            pass
-
-        def register_callee(self, *_: Any) -> Any:
-            return None
-
-        def run(self) -> Any:
-            return None
-
-        async def run_until_stopped(self) -> Any:
-            return None
-
     monkeypatch.setattr(client, "AsyncRPC", FakeRPC)
-
-    config: ExtensionConfig = {
-        "name": "demo3",
-        "isolated": True,
-        "dependencies": [],
-        "share_torch": False,
-        "share_cuda_ipc": False,
-        "apis": [DummyAPI],
-    }
-
     ext = DummyExtension()
-    await client.async_entrypoint(
-        module_path=str(module_dir),
-        extension_type=lambda: ext,  # type: ignore[arg-type]
-        config=config,
-        to_extension=None,
-        from_extension=None,
-        log_queue=None,
-    )
-
+    await _run(module_dir, ext, _config(name="demo3", apis=[DummyAPI]))
     assert DummyAPI.last_rpc is not None
     assert dummy_adapter.calls
 
 
 def test_sealed_worker_skips_api_class_import(monkeypatch: Any) -> Any:
-    config = cast(
-        ExtensionConfig,
-        {
-            "name": "demo-sealed",
-            "isolated": True,
-            "dependencies": [],
-            "share_torch": False,
-            "share_cuda_ipc": False,
-            "execution_model": "sealed_worker",
-            "apis": ["forbidden.module.ForbiddenAPI"],
-        },
-    )
-
+    config = _config(name="demo-sealed", execution_model="sealed_worker", apis=["forbidden.module.ForbiddenAPI"])
     real_import_module = importlib.import_module
 
     def _forbidden_import(name: str, package: str | None = None) -> Any:
@@ -236,7 +155,5 @@ def test_sealed_worker_skips_api_class_import(monkeypatch: Any) -> Any:
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", _forbidden_import)
-
     resolved = uds_client._resolve_api_classes_from_config(config)
-
     assert resolved == []
