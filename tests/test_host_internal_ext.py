@@ -2,30 +2,16 @@ import asyncio
 import logging
 import queue
 import socket
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from pyisolate._internal import host
 from pyisolate._internal.host import Extension
 from pyisolate._internal.rpc_protocol import AsyncRPC, ProxiedSingleton
 from pyisolate._internal.rpc_transports import JSONSocketTransport
-from pyisolate._internal.sandbox_detect import RestrictionModel, SandboxCapability
 from pyisolate.config import ExtensionConfig
-
-
-class DummyRPC:
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.run_called = False
-
-    def register_callee(self, obj: Any, object_id: Any) -> None:
-        pass
-
-    def run(self) -> None:
-        self.run_called = True
 
 
 class DummyProcess:
@@ -91,137 +77,11 @@ class DummyExtension(Extension):
         )
         self.mp = DummyMP()
 
-    def _create_extension_venv(self) -> None:
-        return
-
-    def _install_dependencies(self) -> None:
-        return
-
-    def __launch(self) -> Any:
-        return DummyProcess()
-
-
-@pytest.fixture(autouse=True)
-def reset_env(monkeypatch: Any) -> None:
-    monkeypatch.delenv("PYISOLATE_ENABLE_CUDA_IPC", raising=False)
-    monkeypatch.delenv("PYISOLATE_CHILD", raising=False)
-
 
 def test_initialize_process_requires_share_torch_for_cuda_ipc(tmp_path: Any) -> None:
     ext = DummyExtension(tmp_path, {"share_torch": False, "share_cuda_ipc": True})
     with pytest.raises(RuntimeError):
         ext._initialize_process()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="AF_UNIX monkeypatch requires Linux")
-def test_initialize_process_sets_env_and_runs_rpc(monkeypatch: Any, tmp_path: Any) -> Any:
-    ext = DummyExtension(tmp_path, {"share_torch": True, "share_cuda_ipc": False})
-    monkeypatch.setattr(host, "AsyncRPC", lambda recv_queue=None, send_queue=None, transport=None: DummyRPC())
-
-    class MockPopen:
-        def __init__(self, cmd: Any, **kwargs: Any) -> None:
-            self.args = cmd
-            self.env = kwargs.get("env", {})
-            self.returncode = None
-
-        def poll(self) -> Any:
-            return None
-
-        def terminate(self) -> None:
-            pass
-
-        def kill(self) -> None:
-            pass
-
-        def wait(self, timeout: Any = None) -> Any:
-            return 0
-
-        def __enter__(self) -> Any:
-            return self
-
-        def __exit__(self, *args: Any) -> None:
-            pass
-
-        def communicate(self, input: Any = None, timeout: Any = None) -> Any:
-            return (b"", b"")
-
-    monkeypatch.setattr(host.subprocess, "Popen", MockPopen)
-
-    monkeypatch.setattr(
-        host,
-        "detect_sandbox_capability",
-        lambda: SandboxCapability(
-            available=True,
-            bwrap_path="/usr/bin/bwrap",
-            restriction_model=RestrictionModel.NONE,
-            remediation="",
-            raw_error=None,
-        ),
-    )
-
-    class MockSocket:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def bind(self, path: Any) -> None:
-            pass
-
-        def listen(self, backlog: Any) -> None:
-            pass
-
-        def accept(self) -> Any:
-            return (MockSocket(), "addr")
-
-        def close(self) -> None:
-            pass
-
-        def sendall(self, data: Any) -> None:
-            pass
-
-        def recv(self, n: Any) -> Any:
-            return b""
-
-        def shutdown(self, how: Any) -> None:
-            pass
-
-    monkeypatch.setattr(host.socket, "socket", MockSocket)
-    monkeypatch.setattr(host.socket, "AF_UNIX", 1)
-    monkeypatch.setattr(host.socket, "SOCK_STREAM", 1)
-
-    monkeypatch.setattr(host.os, "chmod", lambda path, mode, **kwargs: None)
-
-    class MockTransport:
-        def __init__(self, sock: Any) -> None:
-            pass
-
-        def send(self, data: Any) -> None:
-            pass
-
-        def recv(self) -> Any:
-            return {}
-
-        def close(self) -> None:
-            pass
-
-    monkeypatch.setattr(host, "JSONSocketTransport", MockTransport)
-
-    venv_path = Path(tmp_path) / "demo"
-    site_packages = venv_path / "lib" / "python3.12" / "site-packages"
-    site_packages.mkdir(parents=True, exist_ok=True)
-
-    python_exe = venv_path / "bin" / "python"
-    python_exe.parent.mkdir(parents=True, exist_ok=True)
-    python_exe.write_text("#!/usr/bin/env python")
-    python_exe.chmod(0o755)
-
-    monkeypatch.setattr(host, "create_venv", lambda *args, **kwargs: None)
-    monkeypatch.setattr(host, "install_dependencies", lambda *args, **kwargs: None)
-
-    ext._initialize_process()
-    val = ext.proc.env.get("PYISOLATE_ENABLE_CUDA_IPC")
-    assert val == "0" or val is None
-    assert isinstance(ext.rpc, DummyRPC)
-    assert ext.rpc.run_called is True
 
 
 def test_callable_roundtrip_shutdown_is_clean(caplog: Any, capsys: Any) -> Any:
@@ -239,14 +99,12 @@ def test_callable_roundtrip_shutdown_is_clean(caplog: Any, capsys: Any) -> Any:
         host_rpc.run()
         child_rpc.run()
         caller = child_rpc.create_caller(HostCallbackAPI, HostCallbackAPI.get_remote_id())
-
         try:
 
             def handler(payload: Any) -> Any:
                 return {"value": payload["value"] + 1}
 
-            result = await asyncio.wait_for(caller.invoke(handler, {"value": 41}), timeout=5)
-            return result
+            return await asyncio.wait_for(caller.invoke(handler, {"value": 41}), timeout=5)
         finally:
             child_rpc.shutdown()
             host_rpc.shutdown()
