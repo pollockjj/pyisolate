@@ -68,7 +68,7 @@ async def test_tensor_roundtrip_cuda(reference_host: Any) -> None:
     Verify sending a CUDA tensor. Requires CUDA IPC if isolated.
     """
     print("\n[TEST] Starting CUDA IPC roundtrip")
-    ext = reference_host.load_test_extension("tensor_cuda_ipc", isolated=True)
+    ext = reference_host.load_test_extension("tensor_cuda_ipc", isolated=True, share_cuda=True)
     proxy = ext.get_proxy()
 
     t = torch.ones(5, 5, device="cuda")
