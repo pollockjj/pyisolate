@@ -11,7 +11,6 @@ coupling pyisolate to any specific framework.
 """
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 from .serialization_registry import SerializerRegistry

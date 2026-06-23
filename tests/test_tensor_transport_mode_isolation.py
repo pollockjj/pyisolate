@@ -141,7 +141,7 @@ def test_serialize_tensor_honors_cuda_ipc_env_at_chokepoint(monkeypatch: pytest.
     class FakeCudaTensor:
         is_cuda = True
 
-        def detach(self) -> "FakeCudaTensor":
+        def detach(self) -> FakeCudaTensor:
             return self
 
         def cpu(self) -> str:
