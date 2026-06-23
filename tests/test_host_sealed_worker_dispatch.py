@@ -2,11 +2,26 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from pyisolate._internal.sandbox_detect import RestrictionModel
 from pyisolate.config import ExtensionConfig
+
+
+def _config(**overrides: Any) -> ExtensionConfig:
+    base: dict[str, Any] = {
+        "name": "test_ext",
+        "module": "test_module",
+        "isolated": True,
+        "dependencies": [],
+        "apis": [],
+        "share_torch": False,
+        "share_cuda_ipc": False,
+        "package_manager": "uv",
+    }
+    base.update(overrides)
+    return cast(ExtensionConfig, base)
 
 
 def _make_extension(config: ExtensionConfig) -> Any:
@@ -29,110 +44,70 @@ def _uv_python_path(venv_path: Path) -> Path:
     return venv_path / "bin" / "python"
 
 
-class TestLaunchDispatchSealedWorker:
-    def test_uv_sealed_worker_uses_json_tensor_transport(self) -> None:
-        config: ExtensionConfig = {
-            "name": "test_ext",
-            "module": "test_module",
-            "isolated": True,
-            "dependencies": [],
-            "apis": [],
-            "share_torch": False,
-            "share_cuda_ipc": False,
-            "package_manager": "uv",
-            "execution_model": "sealed_worker",
-        }
+def test_uv_sealed_worker_uses_json_tensor_transport() -> None:
+    ext = _make_extension(_config(execution_model="sealed_worker"))
+    assert ext._tensor_transport_mode() == "json"
 
-        ext = _make_extension(config)
 
-        assert ext._tensor_transport_mode() == "json"
+@patch("pyisolate._internal.host.build_bwrap_command")
+@patch("pyisolate._internal.host.subprocess.Popen")
+def test_uv_sealed_worker_launches_through_bwrap_with_strict_policy(
+    mock_popen: MagicMock,
+    mock_build_bwrap: MagicMock,
+) -> None:
+    ext = _make_extension(_config(execution_model="sealed_worker"))
+    ext._uds_path = None
+    ext._uds_listener = None
+    ext._client_sock = None
 
-    @patch("pyisolate._internal.host.build_bwrap_command")
-    @patch("pyisolate._internal.host.subprocess.Popen")
-    def test_uv_sealed_worker_launches_through_bwrap_with_strict_policy(
-        self,
-        mock_popen: MagicMock,
-        mock_build_bwrap: MagicMock,
-    ) -> None:
-        config: ExtensionConfig = {
-            "name": "test_ext",
-            "module": "test_module",
-            "isolated": True,
-            "dependencies": [],
-            "apis": [],
-            "share_torch": False,
-            "share_cuda_ipc": False,
-            "package_manager": "uv",
-            "execution_model": "sealed_worker",
-        }
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_popen.return_value = mock_proc
+    mock_build_bwrap.return_value = [
+        "bwrap",
+        "--clearenv",
+        "--setenv",
+        "PYISOLATE_UDS_ADDRESS",
+        "/run/ext.sock",
+    ]
 
-        ext = _make_extension(config)
-        ext._uds_path = None
-        ext._uds_listener = None
-        ext._client_sock = None
+    transport = MagicMock()
+    transport.send = MagicMock()
 
-        mock_proc = MagicMock()
-        mock_proc.pid = 12345
-        mock_popen.return_value = mock_proc
-        mock_build_bwrap.return_value = [
-            "bwrap",
-            "--clearenv",
-            "--setenv",
-            "PYISOLATE_UDS_ADDRESS",
-            "/run/ext.sock",
-        ]
-
-        transport = MagicMock()
-        transport.send = MagicMock()
+    with (
+        patch("pyisolate._internal.host.socket") as mock_socket,
+        patch("pyisolate._internal.host.tempfile"),
+        patch("pyisolate._internal.host.detect_sandbox_capability") as mock_detect,
+        patch("sys.platform", "linux"),
+        patch("pyisolate._internal.host.JSONSocketTransport", return_value=transport),
+        patch("pyisolate._internal.host.AsyncRPC"),
+    ):
+        mock_detect.return_value = MagicMock(available=True, restriction_model=RestrictionModel.NONE)
+        mock_listener = MagicMock()
+        mock_listener.accept.return_value = (MagicMock(), None)
+        mock_socket.socket.return_value = mock_listener
+        mock_socket.AF_UNIX = 1
+        mock_socket.SOCK_STREAM = 1
 
         with (
-            patch("pyisolate._internal.host.socket") as mock_socket,
-            patch("pyisolate._internal.host.tempfile"),
-            patch("pyisolate._internal.host.detect_sandbox_capability") as mock_detect,
-            patch("sys.platform", "linux"),
-            patch("pyisolate._internal.host.JSONSocketTransport", return_value=transport),
-            patch("pyisolate._internal.host.AsyncRPC"),
+            patch("pyisolate._internal.socket_utils.has_af_unix", return_value=True),
+            patch("pyisolate._internal.socket_utils.ensure_ipc_socket_dir", return_value=Path("/run")),
+            patch("pyisolate._internal.host.build_extension_snapshot", return_value={}),
+            patch("os.chmod"),
         ):
-            mock_detect.return_value = MagicMock(
-                available=True,
-                restriction_model=RestrictionModel.NONE,
-            )
-            mock_listener = MagicMock()
-            mock_listener.accept.return_value = (MagicMock(), None)
-            mock_socket.socket.return_value = mock_listener
-            mock_socket.AF_UNIX = 1
-            mock_socket.SOCK_STREAM = 1
+            ext._launch_with_uds()
 
-            with (
-                patch("pyisolate._internal.socket_utils.has_af_unix", return_value=True),
-                patch("pyisolate._internal.socket_utils.ensure_ipc_socket_dir", return_value=Path("/run")),
-                patch("pyisolate._internal.host.build_extension_snapshot", return_value={}),
-                patch("os.chmod"),
-            ):
-                ext._launch_with_uds()
+    mock_build_bwrap.assert_called_once()
+    kwargs = mock_build_bwrap.call_args.kwargs
+    assert kwargs["execution_model"] == "sealed_worker"
+    assert kwargs["sandbox_config"] == {}
+    assert kwargs["python_exe"] == str(_uv_python_path(ext.venv_path))
+    assert kwargs["module_path"] == ext.module_path
+    transport.send.assert_called_once()
+    bootstrap_data = transport.send.call_args[0][0]
+    assert bootstrap_data["snapshot"]["apply_host_sys_path"] is False
 
-        mock_build_bwrap.assert_called_once()
-        kwargs = mock_build_bwrap.call_args.kwargs
-        assert kwargs["execution_model"] == "sealed_worker"
-        assert kwargs["sandbox_config"] == {}
-        assert kwargs["python_exe"] == str(_uv_python_path(ext.venv_path))
-        assert kwargs["module_path"] == ext.module_path
-        transport.send.assert_called_once()
-        bootstrap_data = transport.send.call_args[0][0]
-        assert bootstrap_data["snapshot"]["apply_host_sys_path"] is False
 
-    def test_uv_host_coupled_keeps_shared_memory_tensor_transport(self) -> None:
-        config: ExtensionConfig = {
-            "name": "test_ext",
-            "module": "test_module",
-            "isolated": True,
-            "dependencies": [],
-            "apis": [],
-            "share_torch": False,
-            "share_cuda_ipc": False,
-            "package_manager": "uv",
-        }
-
-        ext = _make_extension(config)
-
-        assert ext._tensor_transport_mode() == "shared_memory"
+def test_uv_host_coupled_keeps_shared_memory_tensor_transport() -> None:
+    ext = _make_extension(_config())
+    assert ext._tensor_transport_mode() == "shared_memory"

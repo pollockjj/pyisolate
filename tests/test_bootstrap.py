@@ -1,6 +1,7 @@
+import contextlib
 import json
 import sys
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 from importlib import import_module
 from typing import Any
 
@@ -34,6 +35,23 @@ class FakeAdapter:
         return None
 
 
+def _write_module(root: Any, module_name: str, value: int) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{module_name}.py").write_text(f"VALUE = {value}\n", encoding="utf-8")
+
+
+@contextlib.contextmanager
+def _isolated(monkeypatch: Any, snapshot: dict[str, Any], *modules: str) -> Iterator[None]:
+    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
+    original_sys_path = list(sys.path)
+    try:
+        yield
+    finally:
+        sys.path[:] = original_sys_path
+        for module_name in modules:
+            sys.modules.pop(module_name, None)
+
+
 @pytest.fixture(autouse=True)
 def clear_registry() -> Generator[None, None, None]:
     registry = SerializerRegistry.get_instance()
@@ -45,27 +63,16 @@ def clear_registry() -> Generator[None, None, None]:
 def test_bootstrap_applies_snapshot(monkeypatch: Any, tmp_path: Any) -> None:
     fake_adapter = FakeAdapter()
     monkeypatch.setattr(bootstrap, "_rehydrate_adapter", lambda name: fake_adapter)
-
-    snapshot = {
-        "sys_path": [str(tmp_path / "foo")],
-        "adapter_ref": "fake:FakeAdapter",
-    }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-
-    original_sys_path = list(sys.path)
-    try:
+    snapshot = {"sys_path": [str(tmp_path / "foo")], "adapter_ref": "fake:FakeAdapter"}
+    with _isolated(monkeypatch, snapshot):
         adapter = bootstrap.bootstrap_child()
         updated_sys_path = list(sys.path)
-    finally:
-        sys.path[:] = original_sys_path
 
     assert adapter is fake_adapter
     assert fake_adapter.setup_called
     assert fake_adapter.registry_used
     assert snapshot["sys_path"][0] in updated_sys_path
-
-    registry = SerializerRegistry.get_instance()
-    assert registry.has_handler("FakeType")
+    assert SerializerRegistry.get_instance().has_handler("FakeType")
 
 
 def test_bootstrap_bad_json(monkeypatch: Any) -> None:
@@ -76,9 +83,7 @@ def test_bootstrap_bad_json(monkeypatch: Any) -> None:
 
 def test_bootstrap_missing_adapter(monkeypatch: Any) -> None:
     monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps({"adapter_ref": "missing"}))
-    monkeypatch.setattr(
-        bootstrap, "_rehydrate_adapter", lambda name: (_ for _ in ()).throw(ValueError("nope"))
-    )
+    monkeypatch.setattr(bootstrap, "_rehydrate_adapter", lambda name: (_ for _ in ()).throw(ValueError("nope")))
     with pytest.raises(ValueError):
         bootstrap.bootstrap_child()
 
@@ -88,55 +93,29 @@ def test_sealed_worker_host_policy_ro_paths_enable_import_without_host_sys_path(
 ) -> None:
     module_name = "sealed_opt_in_visible_module"
     module_root = tmp_path / "opt_in_root"
-    module_root.mkdir(parents=True, exist_ok=True)
-    (module_root / f"{module_name}.py").write_text("VALUE = 42\n", encoding="utf-8")
-
-    snapshot = {
-        "sys_path": [],
-        "apply_host_sys_path": False,
-        "sealed_host_ro_paths": [str(module_root)],
-    }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-
-    original_sys_path = list(sys.path)
-    try:
+    _write_module(module_root, module_name, 42)
+    snapshot = {"sys_path": [], "apply_host_sys_path": False, "sealed_host_ro_paths": [str(module_root)]}
+    with _isolated(monkeypatch, snapshot, module_name):
         bootstrap.bootstrap_child()
         imported = import_module(module_name)
-    finally:
-        sys.path[:] = original_sys_path
-        sys.modules.pop(module_name, None)
-
     assert imported.VALUE == 42
 
 
 def test_sealed_worker_without_opt_in_still_cannot_import_module(monkeypatch: Any, tmp_path: Any) -> None:
     module_name = "sealed_no_opt_in_hidden_module"
     blocked_root = tmp_path / "blocked_root"
-    blocked_root.mkdir(parents=True, exist_ok=True)
-    (blocked_root / f"{module_name}.py").write_text("VALUE = 7\n", encoding="utf-8")
-
-    snapshot = {
-        "sys_path": [str(blocked_root)],
-        "apply_host_sys_path": False,
-    }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-
-    original_sys_path = list(sys.path)
-    try:
+    _write_module(blocked_root, module_name, 7)
+    snapshot = {"sys_path": [str(blocked_root)], "apply_host_sys_path": False}
+    with _isolated(monkeypatch, snapshot, module_name):
         bootstrap.bootstrap_child()
         with pytest.raises(ModuleNotFoundError):
             import_module(module_name)
-    finally:
-        sys.path[:] = original_sys_path
-        sys.modules.pop(module_name, None)
 
 
 def test_sealed_worker_attempts_adapter_rehydration_non_fatal(monkeypatch: Any, tmp_path: Any) -> None:
     module_name = "sealed_opt_in_without_adapter"
     module_root = tmp_path / "adapter_guard_root"
-    module_root.mkdir(parents=True, exist_ok=True)
-    (module_root / f"{module_name}.py").write_text("VALUE = 99\n", encoding="utf-8")
-
+    _write_module(module_root, module_name, 99)
     called = {"rehydrate": False}
 
     def _fail(_name: str) -> None:
@@ -150,16 +129,10 @@ def test_sealed_worker_attempts_adapter_rehydration_non_fatal(monkeypatch: Any, 
         "adapter_ref": "fake.module:Adapter",
         "sealed_host_ro_paths": [str(module_root)],
     }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-
-    original_sys_path = list(sys.path)
-    try:
+    with _isolated(monkeypatch, snapshot, module_name):
         adapter = bootstrap.bootstrap_child()
         imported = import_module(module_name)
-    finally:
-        sys.path[:] = original_sys_path
-        sys.modules.pop(module_name, None)
 
     assert adapter is None
-    assert called["rehydrate"] is True  # rehydration was attempted
+    assert called["rehydrate"] is True
     assert imported.VALUE == 99
