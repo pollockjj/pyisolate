@@ -70,7 +70,9 @@ def test_resolve_cuda_wheel_requirement_picks_highest_matching_version(monkeypat
     compatible_new = _wheel_filename("flash_attn", "1.3.0+pt28cu128")
     incompatible_cuda = _wheel_filename("flash_attn", "1.4.0+cu127torch28")
     out_of_range = _wheel_filename("flash_attn", "2.0.0+cu128torch28")
-    _patch_index(monkeypatch, _simple_index_html(compatible_old, compatible_new, incompatible_cuda, out_of_range))
+    _patch_index(
+        monkeypatch, _simple_index_html(compatible_old, compatible_new, incompatible_cuda, out_of_range)
+    )
 
     resolved = resolve_cuda_wheel_requirements(["flash-attn>=1.0,<2.0"], _INDEX_CFG)
 

@@ -83,7 +83,9 @@ def test_bootstrap_bad_json(monkeypatch: Any) -> None:
 
 def test_bootstrap_missing_adapter(monkeypatch: Any) -> None:
     monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps({"adapter_ref": "missing"}))
-    monkeypatch.setattr(bootstrap, "_rehydrate_adapter", lambda name: (_ for _ in ()).throw(ValueError("nope")))
+    monkeypatch.setattr(
+        bootstrap, "_rehydrate_adapter", lambda name: (_ for _ in ()).throw(ValueError("nope"))
+    )
     with pytest.raises(ValueError):
         bootstrap.bootstrap_child()
 
