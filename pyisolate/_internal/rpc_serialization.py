@@ -20,7 +20,7 @@ from typing import (
     TypedDict,
 )
 
-from .torch_gate import get_torch_optional
+from .torch_gate import cuda_ipc_active, get_torch_optional
 
 if TYPE_CHECKING:
     # Avoid circular imports for type checking if possible
@@ -274,7 +274,7 @@ def _prepare_for_rpc_impl(
     # transport, whose _json_default serializes per channel via serialize_tensor(mode=...).
     if torch_module is not None and isinstance(obj, torch_module.Tensor):
         if obj.is_cuda:
-            if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1":
+            if cuda_ipc_active():
                 _ipc_metrics["send_cuda_ipc"] += 1
                 return obj
             _ipc_metrics["send_cuda_fallback"] += 1

@@ -82,11 +82,19 @@ def test_serialize_for_isolation_reads_cuda_ipc_env_at_runtime(monkeypatch: pyte
             remote_handle_type=RemoteObjectHandle,
         )
 
-    # CUDA IPC configured at runtime -> defer the on-device tensor (do NOT downgrade).
+    import sys
+
+    # On Linux with CUDA IPC configured -> defer the on-device tensor (do NOT downgrade).
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("PYISOLATE_ENABLE_CUDA_IPC", "1")
     assert _serialize() is tensor
 
+    # Off-Linux the env is ignored (CUDA IPC import is Linux-only) -> downgrade to CPU.
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert _serialize() == "DOWNGRADED_TO_CPU"
+
     # CUDA IPC not configured -> fall back to CPU.
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("PYISOLATE_ENABLE_CUDA_IPC", raising=False)
     assert _serialize() == "DOWNGRADED_TO_CPU"
 
@@ -124,6 +132,8 @@ def test_serialize_tensor_honors_cuda_ipc_env_at_chokepoint(monkeypatch: pytest.
     """
     pytest.importorskip("torch")
 
+    import sys
+
     from pyisolate._internal import tensor_serializer
 
     calls: list[str] = []
@@ -148,13 +158,16 @@ def test_serialize_tensor_honors_cuda_ipc_env_at_chokepoint(monkeypatch: pytest.
     monkeypatch.setattr(tensor_serializer, "_serialize_cuda_tensor", _fake_cuda)
     monkeypatch.setattr(tensor_serializer, "_serialize_cpu_tensor", _fake_cpu)
 
-    # CUDA IPC enabled (Linux) -> zero-copy CUDA path preserved.
+    # Linux with CUDA IPC enabled -> zero-copy CUDA path preserved.
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("PYISOLATE_ENABLE_CUDA_IPC", "1")
     assert tensor_serializer.serialize_tensor(FakeCudaTensor())["device"] == "cuda"
 
-    # CUDA IPC disabled (e.g. native Windows) -> copy to CPU, never export an IPC handle.
+    # Off-Linux the guard is deterministic: even with the env set (a stale/raced value),
+    # never export an IPC handle -- copy to CPU, since CUDA-IPC import faults in c10
+    # off-Linux. This is the race-proof gate the env-only check lacked.
     calls.clear()
-    monkeypatch.delenv("PYISOLATE_ENABLE_CUDA_IPC", raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
     out = tensor_serializer.serialize_tensor(FakeCudaTensor())
     assert out["device"] == "cpu"
     assert calls == ["cpu:CPU_COPY"]

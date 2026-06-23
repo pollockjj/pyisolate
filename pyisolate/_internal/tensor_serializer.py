@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .perf_trace import record_event, tracing_enabled
-from .torch_gate import require_torch
+from .torch_gate import cuda_ipc_active, require_torch
 
 logger = logging.getLogger(__name__)
 
@@ -248,13 +248,12 @@ def serialize_tensor(t: Any, mode: str = "shared_memory") -> dict[str, Any]:
 
     torch, _ = require_torch("serialize_tensor")
     if t.is_cuda:
-        # CUDA IPC export/import is only valid where the host enabled it
-        # (PYISOLATE_ENABLE_CUDA_IPC=1, set only when probe_cuda_ipc_support() passes).
-        # A CUDA tensor reaching this chokepoint with IPC disabled has bypassed the
+        # CUDA IPC handle export/import is Linux-only; a CUDA tensor reaching this
+        # chokepoint where IPC is not active (off-Linux, or not enabled) has bypassed the
         # model/rpc pre-passes (e.g. nested inside an unregistered object serialized via
-        # the __dict__ fallback); importing its handle off-Linux faults in c10
+        # the __dict__ fallback). Importing its handle off-Linux faults in c10
         # (cudaErrorDeviceUninitialized), so transport it over the CPU shared-memory path.
-        if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") != "1":
+        if not cuda_ipc_active():
             payload = _serialize_cpu_tensor(t.detach().cpu())
             _record_tensor_trace(t, mode, started_at)
             return payload

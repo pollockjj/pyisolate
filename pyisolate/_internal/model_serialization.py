@@ -15,7 +15,7 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from .serialization_registry import SerializerRegistry
-from .torch_gate import get_torch_optional
+from .torch_gate import cuda_ipc_active, get_torch_optional
 
 if TYPE_CHECKING:  # pragma: no cover - typing aids
     pass  # type: ignore[import-not-found]
@@ -45,11 +45,10 @@ def _serialize_for_isolation_impl(
     # transport, which already serializes per channel via serialize_tensor(mode=...).
     if torch_module is not None and isinstance(data, torch_module.Tensor):
         if data.is_cuda:
-            # Read the CUDA IPC env at call time, not import time: the host sets
-            # PYISOLATE_ENABLE_CUDA_IPC during _initialize_process, after this module is
-            # imported, so an import-time snapshot would be stale and downgrade configured
-            # CUDA tensors to CPU. Matches rpc_serialization._prepare_for_rpc_impl.
-            if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1":
+            # CUDA IPC handle import is Linux-only; gate on platform AND the runtime env
+            # so the CPU fallback is deterministic off-Linux regardless of when the host's
+            # PYISOLATE_ENABLE_CUDA_IPC (set during _initialize_process) is observed.
+            if cuda_ipc_active():
                 return data
             return data.cpu()
         return data
