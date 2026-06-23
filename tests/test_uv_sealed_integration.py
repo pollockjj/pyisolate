@@ -1,4 +1,3 @@
-"""Process-level integration tests for the toolkit-owned uv sealed worker."""
 
 from __future__ import annotations
 
@@ -47,7 +46,6 @@ def _host_site_root() -> str:
 
 
 def _build_uv_config(fixture_path: Path, run_dir: Path) -> ExtensionConfig:
-    # Inlined from fixtures/uv_sealed_worker/pyproject.toml — no TOML parser needed.
     return cast(
         ExtensionConfig,
         {
@@ -101,7 +99,6 @@ async def test_uv_sealed_runtime_uses_toolkit_fixture_without_host_leakage() -> 
                 if "bubblewrap" in str(exc).lower():
                     pytest.skip(f"bwrap unavailable on this platform: {exc}")
                 raise
-            # Verify pyisolate was installed in the child venv from the published index
             if os.name == "nt":
                 child_python = Path(ext.venv_path) / "Scripts" / "python.exe"
             else:
@@ -183,8 +180,6 @@ async def test_uv_sealed_runtime_uses_toolkit_fixture_without_host_leakage() -> 
 
         artifact_dir = run_dir / "artifacts"
         assert (artifact_dir / "child_bootstrap_paths.txt").exists()
-        # child_import_trace.txt is only written by setup_child_environment,
-        # which sealed workers skip (no host sys.path application).
         assert (artifact_dir / "filesystem_barrier_probe.txt").exists()
     finally:
         with contextlib.suppress(Exception):

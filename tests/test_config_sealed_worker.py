@@ -1,4 +1,3 @@
-"""Tests for execution_model validation and backward-compatible defaults."""
 
 from __future__ import annotations
 

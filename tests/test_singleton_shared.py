@@ -1,4 +1,3 @@
-"""Unit tests for SingletonMetaclass and ProxiedSingleton behavior."""
 
 from collections.abc import Generator
 from typing import Any, cast
@@ -15,19 +14,12 @@ from pyisolate._internal.rpc_protocol import (
 
 @pytest.fixture(autouse=True)
 def reset_singleton_state() -> Generator[None, None, None]:
-    """Ensure singleton/global registries are clean for every test.
-
-    Note: This fixture explicitly resets LocalMethodRegistry in addition to
-    the global clean_singletons fixture because these tests specifically
-    verify local method registration behavior.
-    """
     LocalMethodRegistry._instance = None
     yield
     LocalMethodRegistry._instance = None
 
 
 class FakeCaller:
-    """Minimal callable returned by FakeRPC.create_caller."""
 
     def __init__(self, target_cls: Any, object_id: Any) -> None:
         self.target_cls = target_cls
@@ -36,7 +28,6 @@ class FakeCaller:
 
 
 class FakeRPC:
-    """Capture create_caller invocations without spinning up real RPC."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[Any, Any, FakeCaller]] = []
@@ -77,7 +68,6 @@ class ParentSingleton(ProxiedSingleton):
 
 class TestSingletonMetaclass:
     def test_inject_instance_after_instantiation_raises(self) -> None:
-        """inject_instance must run before first instantiation."""
         BasicSingleton()
         with pytest.raises(AssertionError):
             SingletonMetaclass.inject_instance(BasicSingleton, object())
@@ -85,7 +75,6 @@ class TestSingletonMetaclass:
 
 class TestUseRemote:
     def test_use_remote_sets_proxy_instance(self) -> None:
-        """use_remote should inject proxy returned by RPC."""
         rpc = FakeRPC()
         BasicSingleton.use_remote(cast(Any, rpc))
 
@@ -96,7 +85,6 @@ class TestUseRemote:
         assert rpc.calls[0][1] == BasicSingleton.get_remote_id()
 
     def test_local_execution_methods_registered(self) -> None:
-        """Classes with @local_execution should be tracked by registry."""
         rpc = FakeRPC()
         LocalMethodSingleton.use_remote(cast(Any, rpc))
 
@@ -108,27 +96,22 @@ class TestUseRemote:
         assert local_impl() == 2  # local state should be preserved per process
 
     def test_nested_singletons_receive_callers(self) -> None:
-        """Type-hinted ProxiedSingleton attributes get caller proxies injected."""
         rpc = FakeRPC()
         ParentSingleton.use_remote(cast(Any, rpc))
 
         parent_proxy = SingletonMetaclass._instances[ParentSingleton]
         assert isinstance(parent_proxy, FakeCaller)
 
-        # The first call registers parent, the second should register child attribute
         assert len(rpc.calls) == 2
-        # rpc.calls[-1] corresponds to child proxy creation
         _, child_object_id, child_proxy = rpc.calls[-1]
         assert child_object_id == ChildSingleton.get_remote_id()
         assert isinstance(child_proxy, FakeCaller)
 
-        # Attribute on remote should reference the same child proxy
         assert parent_proxy.child is child_proxy
 
 
 class TestLocalMethodRegistry:
     def test_get_local_method_requires_registration(self) -> None:
-        """Attempting to access unregistered class should raise."""
         registry = LocalMethodRegistry.get_instance()
         with pytest.raises(ValueError):
             registry.get_local_method(BasicSingleton, "ping")

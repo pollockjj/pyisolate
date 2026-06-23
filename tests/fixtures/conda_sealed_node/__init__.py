@@ -1,4 +1,3 @@
-"""Simple V1-style node fixture for sealed conda integration tests."""
 
 from __future__ import annotations
 

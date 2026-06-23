@@ -12,14 +12,6 @@ from pyisolate._internal.tensor_serializer import (  # noqa: E402
 
 
 def test_cpu_torch_share_roundtrip_is_zero_copy() -> None:
-    """torch_share CPU transport must stay shared-memory, never a value copy.
-
-    Runs single-process so it executes on Windows, where the multi-process
-    torch_share RPC tests are skipped (extension loading needs Unix sockets).
-    Guards the regression where a /dev/shm gate degrades CPU sharing to a
-    file-based value copy: a copy still passes ``torch.equal`` but breaks the
-    shared-storage contract that callers depend on for zero-copy transfer.
-    """
     _reset_shm_check()
     original = torch.arange(25, dtype=torch.float32).reshape(5, 5)
 

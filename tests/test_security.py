@@ -1,4 +1,3 @@
-"""Security tests for the pyisolate library."""
 
 import pytest
 
@@ -6,10 +5,8 @@ from pyisolate._internal.host import normalize_extension_name, validate_dependen
 
 
 class TestSecurityValidation:
-    """Test security validation functions."""
 
     def test_normalize_extension_name_dangerous_chars(self) -> None:
-        """Test that dangerous characters are replaced."""
         test_cases = [
             ("ext|pipe", "ext_pipe"),
             ("ext`backtick`", "ext_backtick"),
@@ -32,7 +29,6 @@ class TestSecurityValidation:
             assert normalize_extension_name(input_name) == expected
 
     def test_normalize_extension_name_path_traversal(self) -> None:
-        """Test that path traversal attempts are neutralized."""
         test_cases = [
             ("../evil", "evil"),  # Dots at start removed
             ("./hidden", "hidden"),  # Dots at start removed
@@ -45,7 +41,6 @@ class TestSecurityValidation:
             assert normalize_extension_name(input_name) == expected
 
     def test_validate_dependency_invalid(self) -> None:
-        """Test that invalid dependencies are rejected."""
         invalid_cases = [
             ("--extra-index-url", "cannot start with '-'"),
             ("--trusted-host", "cannot start with '-'"),

@@ -1,4 +1,3 @@
-"""Tests for uv + sealed_worker host dispatch under bwrap (Issue 8 Slice 2)."""
 
 from __future__ import annotations
 

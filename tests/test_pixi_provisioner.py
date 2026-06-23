@@ -1,4 +1,3 @@
-"""Tests for pixi binary auto-provisioner."""
 
 from __future__ import annotations
 
@@ -41,11 +40,9 @@ class TestGetTarget:
 
 class TestEnsurePixi:
     def test_downloads_and_caches(self, tmp_path: Any) -> None:
-        """Full download path: fetch, verify, extract, cache."""
         version = PIXI_VERSION
         cache = tmp_path / "pyisolate" / "pixi" / version
 
-        # Create a real archive with a fake pixi binary.
         fake_binary = b"#!/bin/sh\necho pixi"
         binary_name = _binary_name()
         archive_extension = _archive_extension()
@@ -82,7 +79,6 @@ class TestEnsurePixi:
             print(f"RESOLVED_PATH={result}")
 
     def test_path_traversal_member_is_safely_flattened(self, tmp_path: Any) -> None:
-        """Path traversal entries must still extract only to the cache binary path."""
         version = PIXI_VERSION
         cache = tmp_path / "pyisolate" / "pixi" / version
 

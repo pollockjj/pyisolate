@@ -89,11 +89,9 @@ class DummyExtension(Extension):
             config=cast(ExtensionConfig, base_config),
             venv_root_path=str(tmp_path),
         )
-        # patch multiprocessing
         self.mp = DummyMP()
 
     def _create_extension_venv(self) -> None:
-        # skip actual venv creation
         return
 
     def _install_dependencies(self) -> None:
@@ -149,7 +147,6 @@ def test_initialize_process_sets_env_and_runs_rpc(monkeypatch: Any, tmp_path: An
 
     monkeypatch.setattr(host.subprocess, "Popen", MockPopen)
 
-    # Mock sandbox detection to pass on Linux
     monkeypatch.setattr(
         host,
         "detect_sandbox_capability",

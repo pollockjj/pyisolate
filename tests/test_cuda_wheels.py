@@ -1,8 +1,3 @@
-"""Synthetic/unit coverage for CUDA wheel resolution.
-
-These tests intentionally use monkeypatches and fake indexes. They do not
-perform a real wheel download or a real install.
-"""
 
 import builtins
 import io
@@ -206,7 +201,6 @@ def test_install_dependencies_cache_invalidation_tracks_cuda_runtime(monkeypatch
 
 
 def test_share_torch_no_deps_rejects_invalid_type(tmp_path: Any, monkeypatch: Any) -> None:
-    """Invalid share_torch_no_deps config should fail fast."""
     from pyisolate._internal.environment import install_dependencies
 
     venv_path = tmp_path / "venvs" / "test-ext"

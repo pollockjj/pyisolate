@@ -15,21 +15,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Mock singletons for testing inheritance/proxying if needed,
-# though normally we access host singletons via RPC proxies passed in or looked up.
-# For this reference extension, we will assume we get proxies via method arguments
-# or look them up from a registry if implemented.
 
 
 class ReferenceTestExtension(ExtensionBase):
-    """
-    A static, verbose extension for testing PyIsolate features.
-    No more string injection!
-    """
 
     async def initialize(self) -> None:
         logger.info("[TestPkg] Initialized.")
-        # We can set a flag in the process to prove initialization happened
         sys.modules["_test_ext_initialized"] = True  # type: ignore
 
     async def prepare_shutdown(self) -> None:
@@ -45,14 +36,9 @@ class ReferenceTestExtension(ExtensionBase):
             await super().stop()
 
     async def ping(self) -> str:
-        """Basic connectivity check."""
         return "pong"
 
     async def echo_tensor(self, tensor: Any) -> Any:
-        """
-        Verifies tensor round-trip.
-        Expecting a torch.Tensor (or proxy).
-        """
         if not HAS_TORCH:
             return "NO_TORCH"
 
@@ -64,9 +50,6 @@ class ReferenceTestExtension(ExtensionBase):
         return tensor
 
     async def allocate_cuda(self, size_mb: int) -> dict[str, Any]:
-        """
-        Allocates a tensor on CUDA to verify GPU access.
-        """
         if not HAS_TORCH or not torch.cuda.is_available():
             raise RuntimeError("CUDA not available in child")
 
@@ -80,24 +63,17 @@ class ReferenceTestExtension(ExtensionBase):
         }
 
     async def write_file(self, path: str, content: str) -> str:
-        """
-        Attempts to write to a file. Used to test ROI/Sandbox barriers.
-        """
         logger.info(f"[TestPkg] Attempting to write to {path}")
         with open(path, "w") as f:
             f.write(content)
         return "ok"
 
     async def read_file(self, path: str) -> str:
-        """
-        Attempts to read a file.
-        """
         logger.info(f"[TestPkg] Attempting to read from {path}")
         with open(path) as f:
             return f.read()
 
     async def crash_me(self) -> None:
-        """Simulates a hard crash."""
         logger.info("[TestPkg] Goodbye cruel world!")
         os._exit(42)
 
@@ -105,6 +81,5 @@ class ReferenceTestExtension(ExtensionBase):
         return os.environ.get(key)
 
 
-# The entrypoint expected by loader
 def extension_entrypoint() -> ExtensionBase:
     return ReferenceTestExtension()

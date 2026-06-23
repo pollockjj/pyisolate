@@ -9,7 +9,6 @@ from typing import Any, cast
 
 import pytest
 
-# Import the reference package path and class
 import tests.harness.test_package as test_package_module
 from pyisolate._internal.adapter_registry import AdapterRegistry
 from pyisolate._internal.rpc_protocol import AsyncRPC, ProxiedSingleton
@@ -23,23 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 class ReferenceAdapter:
-    """
-    Minimal adapter for the reference harness.
-    """
 
     @property
     def identifier(self) -> str:
         return "reference_harness"
 
     def get_path_config(self, module_path: str) -> dict[str, Any] | None:
-        # Minimal path config
         return {"preferred_root": os.getcwd(), "additional_paths": []}
 
     def setup_child_environment(self, snapshot: dict[str, Any]) -> None:
         pass
 
     def register_serializers(self, registry: SerializerRegistryProtocol) -> None:
-        # Register torch serializers if available
         try:
             import torch  # noqa: F401
 
@@ -57,9 +51,6 @@ class ReferenceAdapter:
 
 
 class ReferenceHost:
-    """
-    A verbose host harness for running integration tests.
-    """
 
     def __init__(self, use_temp_dir: bool = True) -> None:
         self.temp_dir: tempfile.TemporaryDirectory | None = None
@@ -70,17 +61,13 @@ class ReferenceHost:
             self.temp_dir = tempfile.TemporaryDirectory(prefix="pyisolate_harness_")
             self.root_dir = Path(self.temp_dir.name)
 
-        # Setup shared temp for Torch file_system IPC
         self.shared_tmp = self.root_dir / "ipc_shared"
         self.shared_tmp.mkdir(parents=True, exist_ok=True)
-        # Force host process (and children via inherit) to use this TMPDIR
         os.environ["TMPDIR"] = str(self.shared_tmp)
 
         self.venv_root = self.root_dir / "venvs"
         self.venv_root.mkdir(parents=True, exist_ok=True)
 
-        # Keep a stable uv cache across ephemeral harness dirs so large torch
-        # dependency sets are reused instead of repeatedly downloaded.
         shared_uv_cache = Path(tempfile.gettempdir()) / "pyisolate_uv_cache_shared"
         shared_uv_cache.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("PYISOLATE_UV_CACHE_DIR", str(shared_uv_cache))
@@ -93,28 +80,21 @@ class ReferenceHost:
             self.sandbox_available = detect_sandbox_capability().available
 
     def setup(self) -> None:
-        """Initialize the host environment."""
-        # Ensure uv is in PATH
-        # Since we run tests with the venv python, uv should be in the same bin dir
         venv_bin = os.path.dirname(sys.executable)
         path = os.environ.get("PATH", "")
         if venv_bin not in path.split(os.pathsep):
             os.environ["PATH"] = f"{venv_bin}{os.pathsep}{path}"
 
-        # Clean up any existing adapter to ensure fresh state
         AdapterRegistry.unregister()
 
-        # Register our reference adapter
         self.adapter = ReferenceAdapter()
         AdapterRegistry.register(cast(Any, self.adapter))
         self._adapter_registered = True
 
-        # Ensure proper torch multiprocessing setup
         try:
             import torch.multiprocessing
 
             torch.multiprocessing.set_sharing_strategy("file_system")
-            # set_start_method might fail if already set, which is fine
             with contextlib.suppress(RuntimeError):
                 torch.multiprocessing.set_start_method("spawn", force=True)
         except ImportError:
@@ -128,13 +108,8 @@ class ReferenceHost:
         share_cuda: bool = False,
         extra_deps: list[str] | None = None,
     ) -> Extension[ReferenceTestExtension]:
-        """
-        Loads the static reference extension.
-        """
         package_path = Path(test_package_module.__file__).parent.resolve()
 
-        # We need to inject the pyisolate package itself into dependencies
-        # so it can be installed in the isolated venv
         pyisolate_root = Path(__file__).parent.parent.parent.resolve()
 
         if extra_deps is None:
@@ -144,7 +119,6 @@ class ReferenceHost:
         if share_torch:
             pass  # We rely on site-packages inheritance for torch usually
 
-        # Sandbox Config for IPC
         sandbox_cfg: SandboxConfig = {
             "writable_paths": [str(self.shared_tmp)],
         }
@@ -174,10 +148,8 @@ class ReferenceHost:
         return ext
 
     async def cleanup(self) -> None:
-        """Stop all extensions and cleanup resources."""
         cleanup_errors = []
 
-        # Stop processes
         for ext in self.extensions:
             try:
                 with contextlib.suppress(Exception):

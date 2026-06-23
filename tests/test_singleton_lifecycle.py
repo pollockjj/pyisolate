@@ -1,8 +1,3 @@
-"""Singleton lifecycle tests.
-
-These tests explicitly verify singleton injection/cleanup lifecycle behavior,
-particularly the singleton_scope context manager and use_remote() injection.
-"""
 
 from typing import Any, cast
 
@@ -27,10 +22,8 @@ class TestSingletonScopeIsolation:
 
 
 class TestUseRemoteInjection:
-    """Tests for use_remote() proxy injection."""
 
     def test_use_remote_requires_proxied_singleton(self) -> None:
-        """Verify use_remote() only works with ProxiedSingleton subclasses."""
 
         class NotProxied(metaclass=SingletonMetaclass):
             pass

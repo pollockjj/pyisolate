@@ -1,4 +1,3 @@
-"""Repo-owned uv sealed worker fixture for pyisolate integration tests."""
 
 from __future__ import annotations
 

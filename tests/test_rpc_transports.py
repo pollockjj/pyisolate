@@ -1,9 +1,3 @@
-"""Tests for JSONSocketTransport message size limits and recv behavior.
-
-Strategy for size-limit tests: mock `_recvall` to inject crafted length
-headers without allocating multi-GB buffers. Real socketpair() used for
-roundtrip and connection-error tests.
-"""
 
 import asyncio
 import contextlib
@@ -28,7 +22,6 @@ def _make_transport() -> JSONSocketTransport:
 
 
 def _header_then_empty(msg_len: int) -> Any:  # type: ignore[no-untyped-def]
-    """Return a _recvall side_effect: serve header bytes then empty (incomplete body)."""
     header = struct.pack(">I", msg_len & 0xFFFFFFFF)
     call_count = 0
 
@@ -115,7 +108,6 @@ class TestRecvHardLimit:
             transport.close()
 
     def test_2gb_plus_1_raises_value_error(self) -> None:
-        # 2GB+1 = 2147483649 fits in uint32 and is the exact guard boundary
         transport = _make_transport()
         try:
             with (

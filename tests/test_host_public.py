@@ -59,10 +59,8 @@ def base_config(tmp_path: Any) -> Any:
 def test_load_extension_returns_host_extension(monkeypatch: Any, tmp_path: Any) -> None:
     mgr = make_manager(tmp_path)
     proxy = mgr.load_extension(base_config(tmp_path))
-    # First access triggers start + rpc init + proxy creation
     assert proxy.proxy.run() == "ok"
     assert getattr(proxy, "_rpc", None) is mgr.extensions["demo"].rpc
-    # Subsequent access uses cached proxy, no extra starts
     _ = proxy.proxy  # Access to verify caching works
     ext = mgr.extensions["demo"]
     assert isinstance(ext, FakeExtension)
@@ -81,11 +79,9 @@ def test_host_extension_getattr_delegates(monkeypatch: Any, tmp_path: Any) -> No
     mgr = make_manager(tmp_path)
     cfg = base_config(tmp_path)
     proxy = mgr.load_extension(cfg)
-    # Add attr to underlying extension
     ext = mgr.extensions["demo"]
     ext.special = "hello"
     assert proxy.special == "hello"
-    # Attribute missing on extension should delegate to proxy
     assert proxy.run() == "ok"
 
 

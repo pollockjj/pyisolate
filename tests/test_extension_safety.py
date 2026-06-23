@@ -1,4 +1,3 @@
-"""Tests for extension naming, dependency validation, and path safety."""
 
 from typing import Any
 

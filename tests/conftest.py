@@ -1,8 +1,3 @@
-"""
-Pytest configuration and fixtures.
-
-Add any shared fixtures or pytest configuration here.
-"""
 
 import logging
 import sys
@@ -17,27 +12,12 @@ from pyisolate._internal.singleton_context import singleton_scope
 
 @pytest.fixture(autouse=True)
 def clean_singletons() -> Generator[None, None, None]:
-    """Auto-cleanup fixture for singleton isolation between tests.
-
-    This fixture runs automatically for all tests and ensures that:
-    - Each test starts with a clean singleton state
-    - Singletons created during a test are cleaned up afterward
-    - Previous singleton state is restored after each test
-
-    This eliminates the need for manual SingletonMetaclass._instances.clear()
-    calls in individual tests.
-    """
     with singleton_scope():
         yield
 
 
 @pytest.fixture
 def patch_extension_launch(monkeypatch: Any) -> Any:
-    """Prevent real subprocess launches during unit tests.
-
-    NOTE: This fixture is NOT autouse - integration tests should NOT use it.
-    Unit tests that need mocked launch should explicitly request this fixture.
-    """
     from pyisolate._internal import host as host_internal
 
     original_launch = host_internal.Extension._Extension__launch  # type: ignore[attr-defined]
@@ -57,14 +37,10 @@ def patch_extension_launch(monkeypatch: Any) -> Any:
 
 
 def pytest_configure(config: Any) -> None:
-    """Configure pytest with custom settings."""
-    # Register custom markers
     config.addinivalue_line("markers", "slow: marks tests as slow (>5s, deselect with -m 'not slow')")
 
-    # Set up logging
     log_level = logging.DEBUG if config.getoption("--debug-pyisolate") else logging.INFO
 
-    # Configure root logger
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
@@ -72,11 +48,9 @@ def pytest_configure(config: Any) -> None:
         force=True,
     )
 
-    # Set specific logger levels
     logging.getLogger("pyisolate").setLevel(log_level)
     logging.getLogger("asyncio").setLevel(log_level)
 
-    # If custom log file is specified, add file handler
     custom_log_file = config.getoption("--pyisolate-log-file")
     if custom_log_file:
         file_handler = logging.FileHandler(custom_log_file)
@@ -90,7 +64,6 @@ def pytest_configure(config: Any) -> None:
 
 
 def pytest_addoption(parser: Any) -> None:
-    """Add custom command line options."""
     parser.addoption(
         "--debug-pyisolate",
         action="store_true",

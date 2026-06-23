@@ -14,18 +14,13 @@ except ImportError:
 
 @pytest.mark.asyncio
 async def test_tensor_roundtrip_cpu(reference_host: Any) -> None:
-    """
-    Verify sending a CPU tensor to the child and getting it back.
-    """
     print("\n[TEST] Starting CPU tensor roundtrip")
     ext = reference_host.load_test_extension("tensor_cpu", isolated=True)
     proxy = ext.get_proxy()
 
-    # Create tensor
     t = torch.ones(5, 5)
     print(f"[TEST] Created tensor: {t.shape}")
 
-    # Roundtrip
     print("[TEST] Sending tensor...")
     result = await proxy.echo_tensor(t)
     print("[TEST] Tensor echoed back.")
@@ -33,16 +28,11 @@ async def test_tensor_roundtrip_cpu(reference_host: Any) -> None:
     assert isinstance(result, torch.Tensor)
     assert torch.equal(result, t)
     print("[TEST] CPU tensor verification passed.")
-    # Check if storage is shared or copied?
-    # ReferenceHost usually uses file_system strategy for CPU.
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.asyncio
 async def test_tensor_roundtrip_cuda(reference_host: Any) -> None:
-    """
-    Verify sending a CUDA tensor. Requires CUDA IPC if isolated.
-    """
     print("\n[TEST] Starting CUDA IPC roundtrip")
     ext = reference_host.load_test_extension("tensor_cuda_ipc", isolated=True, share_cuda=True)
     proxy = ext.get_proxy()
@@ -50,7 +40,6 @@ async def test_tensor_roundtrip_cuda(reference_host: Any) -> None:
     t = torch.ones(5, 5, device="cuda")
     print(f"[TEST] Created CUDA tensor: {t.shape}, device={t.device}")
 
-    # Roundtrip
     print("[TEST] Sending tensor...")
     result = await proxy.echo_tensor(t)
     print(f"[TEST] Received tensor: device={result.device}")

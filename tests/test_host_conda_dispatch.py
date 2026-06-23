@@ -1,4 +1,3 @@
-"""Tests for host.py dispatch to conda/uv backend (Slice 3)."""
 
 from __future__ import annotations
 
@@ -26,11 +25,9 @@ def _call_private_launch(ext: Any) -> Any:
     return ext._Extension__launch()
 
 
-# ── __launch dispatch ────────────────────────────────────────────────
 
 
 class TestLaunchDispatchConda:
-    """Verify __launch() dispatches to conda backend when package_manager='conda'."""
 
     @patch("pyisolate._internal.host.validate_backend_config")
     @patch("pyisolate._internal.host.create_conda_env")
@@ -43,7 +40,6 @@ class TestLaunchDispatchConda:
         mock_create_conda: MagicMock,
         mock_validate: MagicMock,
     ) -> None:
-        """When package_manager='conda', __launch should call create_conda_env, NOT create_venv."""
         from pyisolate._internal.host import Extension
         from pyisolate.shared import ExtensionBase
 
@@ -60,7 +56,6 @@ class TestLaunchDispatchConda:
         ext.module_path = "/fake/module"
         ext.extension_type = ExtensionBase
 
-        # Call the private __launch via name mangling
         with patch.object(ext, "_launch_with_uds", return_value=MagicMock()):
             _call_private_launch(ext)
 
@@ -70,7 +65,6 @@ class TestLaunchDispatchConda:
 
 
 class TestEnvPropagation:
-    """Verify child env overrides are applied on non-Linux launches too."""
 
     @patch("pyisolate._internal.host.subprocess.Popen")
     def test_windows_launch_propagates_config_env(
@@ -133,11 +127,9 @@ class TestEnvPropagation:
         assert child_env["PYISOLATE_ARTIFACT_DIR"] == r"C:\artifacts"
 
 
-# ── share_cuda_ipc forced False ──────────────────────────────────────
 
 
 class TestCondaCudaIpcForced:
-    """Conda backend must force share_cuda_ipc=False."""
 
     @patch("pyisolate._internal.host.create_conda_env")
     @patch("pyisolate._internal.host.validate_backend_config")
@@ -146,7 +138,6 @@ class TestCondaCudaIpcForced:
         mock_validate: MagicMock,
         mock_conda: MagicMock,
     ) -> None:
-        """Even if config says share_cuda_ipc=True, conda must override to False."""
         from pyisolate._internal.host import Extension
         from pyisolate.shared import ExtensionBase
 
@@ -168,6 +159,5 @@ class TestCondaCudaIpcForced:
         with patch.object(ext, "_launch_with_uds", return_value=MagicMock()):
             _call_private_launch(ext)
 
-        # After __launch, cuda_ipc should be forced False
         assert ext._cuda_ipc_enabled is False
         assert config["share_cuda_ipc"] is False

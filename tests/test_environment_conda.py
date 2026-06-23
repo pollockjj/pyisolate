@@ -1,4 +1,3 @@
-"""Tests for conda/pixi environment creation (environment_conda.py)."""
 
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ from pyisolate.config import ExtensionConfig
 
 
 def _make_conda_config(**overrides: object) -> ExtensionConfig:
-    """Minimal valid conda config for tests."""
     base: ExtensionConfig = {
         "package_manager": "conda",
         "conda_channels": ["conda-forge"],
@@ -43,7 +41,6 @@ def _pixi_python_path(env_path: Path) -> Path:
     return env_path / ".pixi" / "envs" / "default" / "bin" / "python"
 
 
-# ── _generate_pixi_toml ──────────────────────────────────────────────
 
 
 class TestGeneratePixiToml:
@@ -67,9 +64,7 @@ class TestGeneratePixiToml:
     def test_generate_pixi_toml_marker_not_in_version(self) -> None:
         config = _make_conda_config(dependencies=["jax[cuda12]>=0.4.30; sys_platform == 'linux'"])
         toml_str = _generate_pixi_toml(config)
-        # The marker must NOT appear inside the version field
         assert 'version = ">=0.4.30; sys_platform' not in toml_str
-        # It must appear in a separate markers field
         assert 'markers = "sys_platform ==' in toml_str
 
     def test_generate_pixi_toml_pypi_fallback_produces_parseable_toml(self, tmp_path: Path) -> None:
@@ -92,7 +87,6 @@ class TestGeneratePixiToml:
         )
 
 
-# ── create_conda_env ─────────────────────────────────────────────────
 
 
 class TestCreateCondaEnv:
@@ -120,12 +114,10 @@ class TestCreateCondaEnv:
         assert Path(passed_env["TMPDIR"]).exists()
 
     def test_fingerprint_skip(self, tmp_path: Path) -> None:
-        """If fingerprint matches, pixi install should be skipped."""
         env_path = tmp_path / "env"
         env_path.mkdir(parents=True)
         config = _make_conda_config()
 
-        # Pre-create a matching fingerprint
         import hashlib
 
         toml_content = _generate_pixi_toml(config)
@@ -152,11 +144,9 @@ class TestCreateCondaEnv:
         ):
             create_conda_env(env_path, config, "test_ext")
 
-        # pixi install should NOT have been called
         assert not mock_call.called
 
 
-# ── _resolve_pixi_python ─────────────────────────────────────────────
 
 
 class TestResolvePixiPython:
@@ -176,11 +166,9 @@ class TestResolvePixiPython:
         assert ".pixi" in str(result)
 
 
-# ── _install_cuda_wheels_into_pixi target_python threading ─────────────
 
 
 def test_install_cuda_wheels_passes_target_python(monkeypatch: Any, tmp_path: Any) -> Any:
-    """AC-1: conda_python='3.12.*' is parsed and passed as target_python=(3, 12)."""
     captured_kwargs: list[dict] = []
 
     def mock_resolve(deps: Any, config: Any, **kwargs: Any) -> Any:

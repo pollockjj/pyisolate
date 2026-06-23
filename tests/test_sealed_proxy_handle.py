@@ -1,9 +1,3 @@
-"""Tests for SealedNodeExtension proxy handle mechanism (issue #58 Slice 2).
-
-Proves that sealed workers can wrap unregistered objects as
-RemoteObjectHandle, store them in a child-local registry, and resolve
-incoming handles back to the original objects by identity.
-"""
 
 import numpy as np
 import pytest
@@ -19,7 +13,6 @@ def clean_registry() -> None:
 
 
 class _FakeWidget:
-    """Unregistered type used for proxy handle tests."""
 
     def __init__(self, value: int) -> None:
         self.value = value
@@ -60,11 +53,9 @@ def test_sealed_ndarray_roundtrip_via_handle() -> None:
     ext = SealedNodeExtension()
     original = np.ones((100, 100), dtype=np.float32)
 
-    # ndarray is a registered data_type serializer, so it stays inline.
     wrapped = ext._wrap_for_transport(original)
     assert isinstance(wrapped, np.ndarray)
 
-    # Inline data passes through unchanged.
     resolved = ext._resolve_handles(wrapped)
     assert resolved is original
     assert np.array_equal(original, resolved)

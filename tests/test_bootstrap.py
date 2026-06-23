@@ -132,12 +132,6 @@ def test_sealed_worker_without_opt_in_still_cannot_import_module(monkeypatch: An
 
 
 def test_sealed_worker_attempts_adapter_rehydration_non_fatal(monkeypatch: Any, tmp_path: Any) -> None:
-    """Sealed workers attempt adapter rehydration for serializer registration.
-
-    If rehydration fails, it is not fatal — the sealed worker continues
-    without an adapter. This changed from the previous behavior where
-    sealed workers skipped rehydration entirely.
-    """
     module_name = "sealed_opt_in_without_adapter"
     module_root = tmp_path / "adapter_guard_root"
     module_root.mkdir(parents=True, exist_ok=True)

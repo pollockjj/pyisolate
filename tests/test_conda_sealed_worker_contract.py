@@ -1,4 +1,3 @@
-"""Generic conda/uv sealed-worker contract tests."""
 
 from __future__ import annotations
 

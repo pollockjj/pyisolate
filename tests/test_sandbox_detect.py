@@ -1,13 +1,3 @@
-"""Unit tests for sandbox capability detection.
-
-Tests cover:
-- Sysctl file reading
-- RHEL/Ubuntu restriction detection
-- SELinux and hardened kernel checks
-- bwrap binary invocation
-- Error classification
-- Full detection flow
-"""
 
 import sys
 from unittest.mock import patch
@@ -37,10 +27,8 @@ class TestErrorClassification:
 
 
 class TestFullDetection:
-    """Integration tests for full detection flow."""
 
     def test_platform_check_non_linux(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that non-Linux platforms return PLATFORM_UNSUPPORTED."""
         monkeypatch.setattr(sys, "platform", "darwin")
         cap = detect_sandbox_capability()
         assert cap.available is False
@@ -48,7 +36,6 @@ class TestFullDetection:
         assert "darwin" in cap.remediation
 
     def test_bwrap_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that missing bwrap binary returns BWRAP_MISSING."""
         monkeypatch.setattr(sys, "platform", "linux")
         with patch("shutil.which", return_value=None):
             cap = detect_sandbox_capability()
@@ -57,7 +44,6 @@ class TestFullDetection:
             assert "bubblewrap" in cap.remediation.lower()
 
     def test_full_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test full detection success path."""
         monkeypatch.setattr(sys, "platform", "linux")
         with (
             patch("shutil.which", return_value="/usr/bin/bwrap"),
@@ -77,7 +63,6 @@ class TestFullDetection:
             assert cap.remediation == ""
 
     def test_ubuntu_apparmor_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test Ubuntu AppArmor detection with degraded-mode fallback."""
         monkeypatch.setattr(sys, "platform", "linux")
         with (
             patch("shutil.which", return_value="/usr/bin/bwrap"),

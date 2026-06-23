@@ -23,7 +23,6 @@ def test_register_and_lookup() -> None:
 
 class TestDataTypeFlag:
     def test_data_type_cross_type_isolation(self) -> None:
-        # Setting type A as data_type does not affect type B
         registry = SerializerRegistry.get_instance()
         registry.register("TypeA", lambda x: x, data_type=True)
         registry.register("TypeB", lambda x: x)

@@ -1,4 +1,3 @@
-"""Tests for sandboxed sealed_worker runtime security behavior (Issue 8 Slice 2)."""
 
 from __future__ import annotations
 
