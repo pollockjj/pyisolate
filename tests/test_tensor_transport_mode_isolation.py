@@ -108,3 +108,53 @@ def test_prepare_for_rpc_defers_tensor_to_per_channel_transport() -> None:
 
     assert isinstance(out, torch.Tensor)
     assert not (isinstance(out, dict) and out.get("__type__") == "TensorRef")
+
+
+def test_serialize_tensor_honors_cuda_ipc_env_at_chokepoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """serialize_tensor must honor PYISOLATE_ENABLE_CUDA_IPC for on-device tensors.
+
+    Regression: serialize_tensor dispatched on t.is_cuda straight into the CUDA-IPC
+    exporter, ignoring the env gate the pre-passes honor. A CUDA tensor nested inside an
+    unregistered object (e.g. a returned CLIP) bypasses the model/rpc pre-passes via the
+    JSON __dict__ fallback and reaches this chokepoint; the child then imported the IPC
+    handle (rebuild_cuda_tensor) and faulted in c10 (cudaErrorDeviceUninitialized /
+    0xC0000005) where CUDA-IPC import is unsupported (native Windows). With IPC disabled,
+    the chokepoint must copy to CPU and use the shared-memory path. A fake on-device
+    tensor plus stubbed sub-serializers isolate the dispatch decision without a GPU.
+    """
+    pytest.importorskip("torch")
+
+    from pyisolate._internal import tensor_serializer
+
+    calls: list[str] = []
+
+    class FakeCudaTensor:
+        is_cuda = True
+
+        def detach(self) -> "FakeCudaTensor":
+            return self
+
+        def cpu(self) -> str:
+            return "CPU_COPY"
+
+    def _fake_cuda(t: object) -> dict[str, str]:
+        calls.append("cuda")
+        return {"__type__": "TensorRef", "device": "cuda"}
+
+    def _fake_cpu(t: object) -> dict[str, str]:
+        calls.append(f"cpu:{t}")
+        return {"__type__": "TensorRef", "device": "cpu"}
+
+    monkeypatch.setattr(tensor_serializer, "_serialize_cuda_tensor", _fake_cuda)
+    monkeypatch.setattr(tensor_serializer, "_serialize_cpu_tensor", _fake_cpu)
+
+    # CUDA IPC enabled (Linux) -> zero-copy CUDA path preserved.
+    monkeypatch.setenv("PYISOLATE_ENABLE_CUDA_IPC", "1")
+    assert tensor_serializer.serialize_tensor(FakeCudaTensor())["device"] == "cuda"
+
+    # CUDA IPC disabled (e.g. native Windows) -> copy to CPU, never export an IPC handle.
+    calls.clear()
+    monkeypatch.delenv("PYISOLATE_ENABLE_CUDA_IPC", raising=False)
+    out = tensor_serializer.serialize_tensor(FakeCudaTensor())
+    assert out["device"] == "cpu"
+    assert calls == ["cpu:CPU_COPY"]
