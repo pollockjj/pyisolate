@@ -1,7 +1,20 @@
 from __future__ import annotations
 
 import importlib
+import os
+import sys
 from typing import Any
+
+
+def cuda_ipc_active() -> bool:
+    """True only where torch CUDA-IPC handle sharing is supported AND enabled.
+
+    CUDA-IPC handle import is Linux-only -- importing a handle off-Linux faults in c10
+    (cudaErrorDeviceUninitialized). The host sets PYISOLATE_ENABLE_CUDA_IPC during init
+    from probe_cuda_ipc_support(), but the serialization chokepoints gate on sys.platform
+    here too so the CPU fallback is deterministic regardless of when the env is observed.
+    """
+    return sys.platform == "linux" and os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") == "1"
 
 
 def get_torch_optional() -> tuple[Any | None, Any | None]:
