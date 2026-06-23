@@ -248,6 +248,16 @@ def serialize_tensor(t: Any, mode: str = "shared_memory") -> dict[str, Any]:
 
     torch, _ = require_torch("serialize_tensor")
     if t.is_cuda:
+        # CUDA IPC export/import is only valid where the host enabled it
+        # (PYISOLATE_ENABLE_CUDA_IPC=1, set only when probe_cuda_ipc_support() passes).
+        # A CUDA tensor reaching this chokepoint with IPC disabled has bypassed the
+        # model/rpc pre-passes (e.g. nested inside an unregistered object serialized via
+        # the __dict__ fallback); importing its handle off-Linux faults in c10
+        # (cudaErrorDeviceUninitialized), so transport it over the CPU shared-memory path.
+        if os.environ.get("PYISOLATE_ENABLE_CUDA_IPC") != "1":
+            payload = _serialize_cpu_tensor(t.detach().cpu())
+            _record_tensor_trace(t, mode, started_at)
+            return payload
         payload = _serialize_cuda_tensor(t)
         _record_tensor_trace(t, mode, started_at)
         return payload
