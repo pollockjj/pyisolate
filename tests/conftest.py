@@ -1,4 +1,3 @@
-
 import logging
 import sys
 from collections.abc import Generator

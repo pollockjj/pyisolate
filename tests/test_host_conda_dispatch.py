@@ -44,7 +44,9 @@ def test_conda_calls_create_conda_env(
     mock_create_conda: MagicMock,
     mock_validate: MagicMock,
 ) -> None:
-    config = _make_config(package_manager="conda", conda_channels=["conda-forge"], conda_dependencies=["numpy"])
+    config = _make_config(
+        package_manager="conda", conda_channels=["conda-forge"], conda_dependencies=["numpy"]
+    )
     ext = _make_ext(config)
     with patch.object(ext, "_launch_with_uds", return_value=MagicMock()):
         ext._Extension__launch()
@@ -57,7 +59,10 @@ def test_conda_calls_create_conda_env(
 @patch("pyisolate._internal.host.validate_backend_config")
 def test_conda_forces_cuda_ipc_false(mock_validate: MagicMock, mock_conda: MagicMock) -> None:
     config = _make_config(
-        share_cuda_ipc=True, package_manager="conda", conda_channels=["conda-forge"], conda_dependencies=["numpy"]
+        share_cuda_ipc=True,
+        package_manager="conda",
+        conda_channels=["conda-forge"],
+        conda_dependencies=["numpy"],
     )
     ext = _make_ext(config, _cuda_ipc_enabled=True)
     with patch.object(ext, "_launch_with_uds", return_value=MagicMock()):

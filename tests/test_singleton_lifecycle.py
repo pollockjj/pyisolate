@@ -1,4 +1,3 @@
-
 from typing import Any, cast
 
 import pytest
@@ -22,7 +21,6 @@ class TestSingletonScopeIsolation:
 
 
 class TestUseRemoteInjection:
-
     def test_use_remote_requires_proxied_singleton(self) -> None:
 
         class NotProxied(metaclass=SingletonMetaclass):

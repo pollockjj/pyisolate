@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -8,7 +7,6 @@ from pyisolate.interfaces import IsolationAdapter, SerializerRegistryProtocol
 
 
 class MockTestData:
-
     def __init__(self, value: Any) -> None:
         self.value = value
 
@@ -22,7 +20,6 @@ class MockTestData:
 
 
 class MockRegistry(ProxiedSingleton):
-
     def __init__(self) -> None:
         super().__init__()
         self._store: dict[str, Any] = {}
@@ -43,7 +40,6 @@ class MockRegistry(ProxiedSingleton):
 
 
 class MockHostAdapter(IsolationAdapter):
-
     def __init__(self, root_path: str = "/tmp/testhost") -> None:
         self._root = root_path
         self._extensions_dir = f"{root_path}/extensions"

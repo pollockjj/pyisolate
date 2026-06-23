@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import Any, cast
 
@@ -8,7 +7,6 @@ from .fixtures.test_adapter import MockRegistry
 
 
 class TestProxiedSingletonContract:
-
     def test_singleton_returns_same_instance(self) -> None:
         instance1 = MockRegistry()
         instance2 = MockRegistry()
@@ -31,7 +29,6 @@ class TestProxiedSingletonContract:
 
 
 class TestEventLoopResilience:
-
     def test_asyncrpc_constructs_without_current_event_loop(self) -> None:
         import queue
 

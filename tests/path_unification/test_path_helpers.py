@@ -1,4 +1,3 @@
-
 from pyisolate.path_helpers import (
     build_child_sys_path,
     serialize_host_snapshot,
@@ -6,7 +5,6 @@ from pyisolate.path_helpers import (
 
 
 class TestSerializeHostSnapshot:
-
     def test_snapshot_contains_required_keys(self) -> None:
         snapshot = serialize_host_snapshot()
 
@@ -22,7 +20,6 @@ class TestSerializeHostSnapshot:
 
 
 class TestBuildChildSysPath:
-
     def test_preserves_host_order(self) -> None:
         host = ["/host/lib1", "/host/lib2", "/host/lib3"]
         extras: list[str] = ["/venv/lib"]

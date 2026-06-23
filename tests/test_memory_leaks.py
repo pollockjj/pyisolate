@@ -1,4 +1,3 @@
-
 import gc
 import time
 import weakref
@@ -10,7 +9,6 @@ from pyisolate._internal.rpc_protocol import ProxiedSingleton, SingletonMetaclas
 
 
 class TestTensorKeeperCleanup:
-
     @pytest.fixture(autouse=True)
     def fast_tensor_keeper(self, monkeypatch: Any) -> None:
         from pyisolate._internal.tensor_serializer import TensorKeeper
@@ -71,7 +69,6 @@ class TestTensorKeeperCleanup:
 
 
 class TestMemoryLeakScenarios:
-
     def test_exception_during_init_no_leak(self) -> None:
 
         class FailingService(ProxiedSingleton):

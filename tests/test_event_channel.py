@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import Any, cast
 
@@ -8,7 +7,6 @@ from pyisolate._internal.event_bridge import _EventBridge
 
 
 class TestEventBridgeDispatch:
-
     def test_emit_event_dispatches_to_handler(self) -> None:
         bridge = _EventBridge()
         received = []

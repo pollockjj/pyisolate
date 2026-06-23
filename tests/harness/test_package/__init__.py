@@ -16,9 +16,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-
 class ReferenceTestExtension(ExtensionBase):
-
     async def initialize(self) -> None:
         logger.info("[TestPkg] Initialized.")
         sys.modules["_test_ext_initialized"] = True  # type: ignore

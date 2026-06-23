@@ -1,4 +1,3 @@
-
 from collections.abc import Generator
 from typing import Any, cast
 
@@ -20,7 +19,6 @@ def reset_singleton_state() -> Generator[None, None, None]:
 
 
 class FakeCaller:
-
     def __init__(self, target_cls: Any, object_id: Any) -> None:
         self.target_cls = target_cls
         self.object_id = object_id
@@ -28,7 +26,6 @@ class FakeCaller:
 
 
 class FakeRPC:
-
     def __init__(self) -> None:
         self.calls: list[tuple[Any, Any, FakeCaller]] = []
 

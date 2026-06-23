@@ -31,9 +31,6 @@ async def test_filesystem_barrier(reference_host: Any) -> None:
         ext = reference_host.load_test_extension("fs_test", isolated=True)
         proxy = ext.get_proxy()
 
-
-
-
         try:
             await proxy.write_file("/etc/hosts", "hacked")
             write_succeeded = True
@@ -41,7 +38,6 @@ async def test_filesystem_barrier(reference_host: Any) -> None:
             write_succeeded = False
 
         assert not write_succeeded, "Child should NOT be able to write to /etc/hosts"
-
 
     finally:
         if os.path.exists(sensitive_path):

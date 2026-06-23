@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -39,8 +38,6 @@ def _pixi_python_path(env_path: Path) -> Path:
     if os.name == "nt":
         return env_path / ".pixi" / "envs" / "default" / "python.exe"
     return env_path / ".pixi" / "envs" / "default" / "bin" / "python"
-
-
 
 
 class TestGeneratePixiToml:
@@ -85,8 +82,6 @@ class TestGeneratePixiToml:
         assert pyisolate_dep.startswith("=="), (
             f"Expected version pin starting with '==', got: {pyisolate_dep}"
         )
-
-
 
 
 class TestCreateCondaEnv:
@@ -147,8 +142,6 @@ class TestCreateCondaEnv:
         assert not mock_call.called
 
 
-
-
 class TestResolvePixiPython:
     def test_missing_python_raises(self, tmp_path: Path) -> None:
         env_path = tmp_path / "env"
@@ -164,8 +157,6 @@ class TestResolvePixiPython:
         result = _resolve_pixi_python(env_path)
         assert str(result) != sys.executable
         assert ".pixi" in str(result)
-
-
 
 
 def test_install_cuda_wheels_passes_target_python(monkeypatch: Any, tmp_path: Any) -> Any:

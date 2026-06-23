@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import Any
 
@@ -9,7 +8,6 @@ from pyisolate._internal.rpc_transports import RPCTransport
 
 
 class MockTransport(RPCTransport):
-
     def __init__(self) -> None:
         self.recv_future: asyncio.Future[Any] = asyncio.Future()
         self.sent_messages: list[Any] = []
@@ -30,7 +28,6 @@ class MockTransport(RPCTransport):
 
 
 class BlockingMockTransport(RPCTransport):
-
     def __init__(self) -> None:
         self.recv_queue: asyncio.Queue[Any] = asyncio.Queue()
         self.closed = False

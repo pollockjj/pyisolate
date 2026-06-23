@@ -1,11 +1,9 @@
-
 import pytest
 
 from pyisolate._internal.host import normalize_extension_name, validate_dependency
 
 
 class TestSecurityValidation:
-
     def test_normalize_extension_name_dangerous_chars(self) -> None:
         test_cases = [
             ("ext|pipe", "ext_pipe"),

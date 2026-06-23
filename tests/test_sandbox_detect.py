@@ -1,4 +1,3 @@
-
 import sys
 from unittest.mock import patch
 
@@ -27,7 +26,6 @@ class TestErrorClassification:
 
 
 class TestFullDetection:
-
     def test_platform_check_non_linux(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sys, "platform", "darwin")
         cap = detect_sandbox_capability()

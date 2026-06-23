@@ -18,7 +18,6 @@ async def test_extension_lifecycle(reference_host: Any) -> None:
 @pytest.mark.asyncio
 async def test_non_isolated_lifecycle(reference_host: Any) -> None:
 
-
     ext = reference_host.load_test_extension("no_torch_share", isolated=True, share_torch=False)
     proxy = ext.get_proxy()
     assert await proxy.ping() == "pong"

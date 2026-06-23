@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 class ReferenceAdapter:
-
     @property
     def identifier(self) -> str:
         return "reference_harness"
@@ -51,7 +50,6 @@ class ReferenceAdapter:
 
 
 class ReferenceHost:
-
     def __init__(self, use_temp_dir: bool = True) -> None:
         self.temp_dir: tempfile.TemporaryDirectory | None = None
         self.root_dir: Path = Path(os.getcwd())

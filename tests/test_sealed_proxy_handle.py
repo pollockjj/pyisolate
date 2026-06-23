@@ -1,4 +1,3 @@
-
 import numpy as np
 import pytest
 
@@ -13,7 +12,6 @@ def clean_registry() -> None:
 
 
 class _FakeWidget:
-
     def __init__(self, value: int) -> None:
         self.value = value
 

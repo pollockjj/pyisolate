@@ -1,4 +1,3 @@
-
 import pytest
 
 from pyisolate._internal.model_serialization import deserialize_from_isolation
@@ -72,7 +71,6 @@ class TestContainerPassthrough:
 
 
 class TestOpaqueHandlePreservation:
-
     async def test_deserialize_preserves_opaque_handle_no_rpc(self) -> None:
         from unittest.mock import AsyncMock
 
