@@ -49,61 +49,39 @@ def _fake_venv_python(venv_path: Path) -> Path:
     return python_path
 
 
+_INDEX_CFG: dict[str, Any] = {
+    "index_url": "https://example.invalid/cuda-wheels/",
+    "packages": ["flash-attn"],
+    "package_map": {},
+}
+_PAGE_URL = "https://example.invalid/cuda-wheels/flash-attn/"
+
+
+def _patch_index(monkeypatch: Any, html: str) -> None:
+    monkeypatch.setattr("pyisolate._internal.cuda_wheels.get_cuda_wheel_runtime", lambda **kw: _runtime())
+    monkeypatch.setattr(
+        "pyisolate._internal.cuda_wheels._fetch_index_html",
+        lambda url: html if url == _PAGE_URL else None,
+    )
+
+
 def test_resolve_cuda_wheel_requirement_picks_highest_matching_version(monkeypatch: Any) -> None:
-    runtime = _runtime()
     compatible_old = _wheel_filename("flash_attn", "1.1.0+cu128torch28")
     compatible_new = _wheel_filename("flash_attn", "1.3.0+pt28cu128")
     incompatible_cuda = _wheel_filename("flash_attn", "1.4.0+cu127torch28")
     out_of_range = _wheel_filename("flash_attn", "2.0.0+cu128torch28")
-    page_url = "https://example.invalid/cuda-wheels/flash-attn/"
+    _patch_index(monkeypatch, _simple_index_html(compatible_old, compatible_new, incompatible_cuda, out_of_range))
 
-    monkeypatch.setattr("pyisolate._internal.cuda_wheels.get_cuda_wheel_runtime", lambda **kw: runtime)
-    monkeypatch.setattr(
-        "pyisolate._internal.cuda_wheels._fetch_index_html",
-        lambda url: (
-            _simple_index_html(
-                compatible_old,
-                compatible_new,
-                incompatible_cuda,
-                out_of_range,
-            )
-            if url == page_url
-            else None
-        ),
-    )
+    resolved = resolve_cuda_wheel_requirements(["flash-attn>=1.0,<2.0"], _INDEX_CFG)
 
-    resolved = resolve_cuda_wheel_requirements(
-        ["flash-attn>=1.0,<2.0"],
-        {
-            "index_url": "https://example.invalid/cuda-wheels/",
-            "packages": ["flash-attn"],
-            "package_map": {},
-        },
-    )
-
-    assert resolved == [page_url + compatible_new]
+    assert resolved == [_PAGE_URL + compatible_new]
 
 
 def test_resolve_cuda_wheel_requirement_raises_when_no_match(monkeypatch: Any) -> None:
-    runtime = _runtime()
-    wheel = _wheel_filename("flash_attn", "1.1.0+cu127torch28")
-    page_url = "https://example.invalid/cuda-wheels/flash-attn/"
-
-    monkeypatch.setattr("pyisolate._internal.cuda_wheels.get_cuda_wheel_runtime", lambda **kw: runtime)
-    monkeypatch.setattr(
-        "pyisolate._internal.cuda_wheels._fetch_index_html",
-        lambda url: _simple_index_html(wheel) if url == page_url else None,
-    )
+    _patch_index(monkeypatch, _simple_index_html(_wheel_filename("flash_attn", "1.1.0+cu127torch28")))
 
     with pytest.raises(CUDAWheelResolutionError, match="No compatible CUDA wheel found"):
-        resolve_cuda_wheel_requirements(
-            ["flash-attn>=1.0"],
-            {
-                "index_url": "https://example.invalid/cuda-wheels/",
-                "packages": ["flash-attn"],
-                "package_map": {},
-            },
-        )
+        resolve_cuda_wheel_requirements(["flash-attn>=1.0"], _INDEX_CFG)
 
 
 def test_get_cuda_wheel_runtime_raises_without_torch(monkeypatch: Any) -> Any:
