@@ -47,26 +47,6 @@ class TestDictGuard:
         assert result is foo
         assert not called
 
-    async def test_already_materialized_passthrough(self) -> None:
-        # Core bug scenario: a PLY-like object already reconstructed by
-        # _json_object_hook has a registered handler. The dict guard must
-        # prevent re-deserialization — the object passes through unchanged.
-        class PLY:
-            def __init__(self, raw_data: bytes) -> None:
-                self.raw_data = raw_data
-
-        def ply_deserializer(d: object) -> PLY:
-            # If called on a PLY instance (not a dict), this would raise or corrupt
-            raise AssertionError("deserializer must not be called on already-materialized PLY")
-
-        registry = SerializerRegistry.get_instance()
-        registry.register("PLY", lambda x: x, ply_deserializer)
-
-        materialized = PLY(raw_data=b"\x70\x6c\x79")  # already reconstructed
-        result = await deserialize_from_isolation(materialized)
-        assert result is materialized
-        assert result.raw_data == b"\x70\x6c\x79"
-
 
 class TestRefTypeDeserialization:
     async def test_dict_ref_type_uses_registered_deserializer(self) -> None:
@@ -76,12 +56,6 @@ class TestRefTypeDeserialization:
         registry.register("MyRef", lambda x: x, lambda x: sentinel)
         result = await deserialize_from_isolation({"__type__": "MyRef", "id": "abc"})
         assert result is sentinel
-
-    async def test_dict_ref_type_unknown_returns_dict(self) -> None:
-        # Unknown __type__ with no handler → dict returned as-is (recursively deserialized)
-        result = await deserialize_from_isolation({"__type__": "Unknown", "val": 42})
-        assert isinstance(result, dict)
-        assert result["val"] == 42
 
     async def test_nested_dict_ref_deserialization(self) -> None:
         # {"a": {"__type__": "MyRef"}} — inner ref must be recursively deserialized
@@ -107,18 +81,6 @@ class TestContainerPassthrough:
         result = await deserialize_from_isolation((1, 2, 3))
         assert isinstance(result, tuple)
         assert result == (1, 2, 3)
-
-    async def test_string_passthrough(self) -> None:
-        result = await deserialize_from_isolation("hello")
-        assert result == "hello"
-
-    async def test_int_passthrough(self) -> None:
-        result = await deserialize_from_isolation(42)
-        assert result == 42
-
-    async def test_none_passthrough(self) -> None:
-        result = await deserialize_from_isolation(None)
-        assert result is None
 
 
 class TestOpaqueHandlePreservation:

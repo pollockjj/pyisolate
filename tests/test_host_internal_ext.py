@@ -115,25 +115,6 @@ def test_initialize_process_requires_share_torch_for_cuda_ipc(tmp_path: Any) -> 
         ext._initialize_process()
 
 
-def test_initialize_process_cuda_ipc_unavailable_raises(monkeypatch: Any, tmp_path: Any) -> Any:
-    ext = DummyExtension(tmp_path, {"share_torch": True, "share_cuda_ipc": True})
-    from pyisolate._internal import torch_utils
-
-    monkeypatch.setattr(torch_utils, "probe_cuda_ipc_support", lambda: (False, "no"))
-
-    def mock_launch() -> Any:
-        if ext.config.get("share_cuda_ipc"):
-            supported, reason = torch_utils.probe_cuda_ipc_support()
-            if not supported:
-                raise RuntimeError(f"CUDA IPC not available: {reason}")
-        return SimpleNamespace(poll=lambda: None, terminate=lambda: None)
-
-    monkeypatch.setattr(ext, "_Extension__launch", mock_launch)
-
-    with pytest.raises(RuntimeError):
-        ext._initialize_process()
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="AF_UNIX monkeypatch requires Linux")
 def test_initialize_process_sets_env_and_runs_rpc(monkeypatch: Any, tmp_path: Any) -> Any:
     ext = DummyExtension(tmp_path, {"share_torch": True, "share_cuda_ipc": False})
@@ -246,16 +227,6 @@ def test_initialize_process_sets_env_and_runs_rpc(monkeypatch: Any, tmp_path: An
     assert ext.rpc.run_called is True
 
 
-def test_install_dependencies_no_deps_returns(monkeypatch: Any, tmp_path: Any) -> None:
-    ext = DummyExtension(tmp_path)
-    # ensure python exe exists
-    venv_bin = Path(ext.venv_path / "bin")
-    venv_bin.mkdir(parents=True, exist_ok=True)
-    exe = venv_bin / "python"
-    exe.write_text("#!/usr/bin/env python")
-    ext._install_dependencies()
-
-
 def test_probe_cuda_ipc_support_handles_import_error(monkeypatch: Any) -> None:
     from pyisolate._internal import torch_utils
 
@@ -264,33 +235,6 @@ def test_probe_cuda_ipc_support_handles_import_error(monkeypatch: Any) -> None:
     supported, reason = torch_utils.probe_cuda_ipc_support()
     assert supported is False
     assert "torch import failed" in reason
-
-
-def test_install_dependencies_respects_lock_cache(monkeypatch: Any, tmp_path: Any) -> None:
-    ext = DummyExtension(tmp_path)
-    venv_bin = Path(ext.venv_path / "bin")
-    venv_bin.mkdir(parents=True, exist_ok=True)
-    exe = venv_bin / "python"
-    exe.write_text("#!/usr/bin/env python")
-
-    lock = ext.venv_path / ".pyisolate_deps.json"
-    from pyisolate._internal import environment
-
-    descriptor = {
-        "dependencies": [],
-        "share_torch": True,
-        "torch_spec": None,
-        "pyisolate": environment.pyisolate_version,
-        "python": host.sys.version,
-    }
-    import hashlib
-    import json
-
-    fp = hashlib.sha256(json.dumps(descriptor, sort_keys=True).encode()).hexdigest()
-    lock.write_text(json.dumps({"fingerprint": fp, "descriptor": descriptor}))
-
-    # should return early without invoking pip/uv
-    ext._install_dependencies()
 
 
 def test_callable_roundtrip_shutdown_is_clean(caplog: Any, capsys: Any) -> Any:

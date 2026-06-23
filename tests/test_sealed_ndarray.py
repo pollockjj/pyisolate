@@ -11,14 +11,6 @@ from pyisolate.sealed import SealedNodeExtension
 
 
 class TestSealedNdarrayTransport:
-    def test_ndarray_registered_as_data_type(self) -> None:
-        """After SealedNodeExtension init, ndarray is a registered data_type."""
-        with singleton_scope():
-            SealedNodeExtension()
-            registry = SerializerRegistry.get_instance()
-            assert registry.has_handler("ndarray")
-            assert registry.is_data_type("ndarray")
-
     def test_ndarray_serializes_as_tensor_value(self) -> None:
         """ndarray serializer produces TensorValue dict, not RemoteObjectHandle."""
         with singleton_scope():

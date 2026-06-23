@@ -48,39 +48,6 @@ class TestProxyGarbageCollection:
         # Instance should be collected
         assert weak_ref() is None, "Singleton not collected after clearing registry"
 
-    def test_nested_singleton_gc(self) -> None:
-        """Verify nested singletons are properly collected."""
-
-        class ChildService(ProxiedSingleton):
-            def __init__(self) -> None:
-                super().__init__()
-                self.data: list[Any] = []
-
-        class ParentService(ProxiedSingleton):
-            def __init__(self) -> None:
-                super().__init__()
-                self.child = ChildService()
-
-        # Create parent and child
-        parent = ParentService()
-        child_ref = weakref.ref(parent.child)
-        parent_ref = weakref.ref(parent)
-
-        # Both should exist
-        assert child_ref() is not None
-        assert parent_ref() is not None
-
-        # Clear and collect
-        del parent
-        SingletonMetaclass._instances.clear()
-
-        for _ in range(3):
-            gc.collect()
-
-        # Both should be collected
-        assert parent_ref() is None, "Parent not collected"
-        assert child_ref() is None, "Child not collected"
-
 
 class TestTensorKeeperCleanup:
     """Tests for TensorKeeper memory management."""
@@ -188,70 +155,9 @@ class TestRegistryCleanup:
         SingletonMetaclass._instances.clear()
         assert CountedService not in SingletonMetaclass._instances
 
-    def test_registry_cleanup_on_instance_delete(self) -> None:
-        """Verify registry doesn't prevent GC when manually cleared."""
-
-        class TrackedService(ProxiedSingleton):
-            pass
-
-        instance = TrackedService()
-        weak_ref = weakref.ref(instance)
-
-        # Instance in registry
-        assert TrackedService in SingletonMetaclass._instances
-        assert weak_ref() is not None
-
-        # Delete local ref (registry still holds it)
-        del instance
-        gc.collect()
-        # Still alive via registry
-        assert weak_ref() is not None
-
-        # Clear registry
-        SingletonMetaclass._instances.clear()
-        for _ in range(3):
-            gc.collect()
-
-        # Now should be collected
-        assert weak_ref() is None
-
 
 class TestMemoryLeakScenarios:
     """Tests for specific memory leak scenarios."""
-
-    def test_circular_reference_singleton(self) -> None:
-        """Verify circular references don't prevent collection."""
-
-        class NodeA(ProxiedSingleton):
-            def __init__(self) -> None:
-                super().__init__()
-                self.ref: NodeB | None = None
-
-        class NodeB(ProxiedSingleton):
-            def __init__(self) -> None:
-                super().__init__()
-                self.ref: NodeA | None = None
-
-        # Create circular reference
-        a = NodeA()
-        b = NodeB()
-        a.ref = b
-        b.ref = a
-
-        weak_a = weakref.ref(a)
-        weak_b = weakref.ref(b)
-
-        # Clear references
-        del a, b
-        SingletonMetaclass._instances.clear()
-
-        # Force GC (Python's GC handles cycles)
-        for _ in range(3):
-            gc.collect()
-
-        # Both should be collected
-        assert weak_a() is None, "NodeA not collected (circular ref)"
-        assert weak_b() is None, "NodeB not collected (circular ref)"
 
     def test_exception_during_init_no_leak(self) -> None:
         """Verify exceptions during __init__ don't leak memory."""

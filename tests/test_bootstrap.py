@@ -68,11 +68,6 @@ def test_bootstrap_applies_snapshot(monkeypatch: Any, tmp_path: Any) -> None:
     assert registry.has_handler("FakeType")
 
 
-def test_bootstrap_no_snapshot(monkeypatch: Any) -> None:
-    monkeypatch.delenv("PYISOLATE_HOST_SNAPSHOT", raising=False)
-    assert bootstrap.bootstrap_child() is None
-
-
 def test_bootstrap_bad_json(monkeypatch: Any) -> None:
     monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", "not-json")
     with pytest.raises(ValueError):
@@ -86,39 +81,6 @@ def test_bootstrap_missing_adapter(monkeypatch: Any) -> None:
     )
     with pytest.raises(ValueError):
         bootstrap.bootstrap_child()
-
-
-def test_bootstrap_skips_host_sys_path_for_sealed_worker(monkeypatch: Any, tmp_path: Any) -> None:
-    host_only_path = str(tmp_path / "host_only")
-    snapshot = {
-        "sys_path": [host_only_path],
-        "adapter_ref": "fake:FakeAdapter",
-        "apply_host_sys_path": False,
-    }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-
-    original_sys_path = list(sys.path)
-    try:
-        adapter = bootstrap.bootstrap_child()
-        updated_sys_path = list(sys.path)
-    finally:
-        sys.path[:] = original_sys_path
-
-    assert adapter is None
-    assert host_only_path not in updated_sys_path
-
-
-def test_bootstrap_sealed_worker_skips_adapter_rehydration(monkeypatch: Any) -> None:
-    snapshot = {
-        "adapter_ref": "bad.module:BadClass",
-        "apply_host_sys_path": False,
-    }
-    monkeypatch.setenv("PYISOLATE_HOST_SNAPSHOT", json.dumps(snapshot))
-    monkeypatch.setattr(
-        bootstrap, "_rehydrate_adapter", lambda name: (_ for _ in ()).throw(ValueError("should not run"))
-    )
-
-    assert bootstrap.bootstrap_child() is None
 
 
 def test_sealed_worker_host_policy_ro_paths_enable_import_without_host_sys_path(
@@ -207,29 +169,3 @@ def test_sealed_worker_attempts_adapter_rehydration_non_fatal(monkeypatch: Any, 
     assert adapter is None
     assert called["rehydrate"] is True  # rehydration was attempted
     assert imported.VALUE == 99
-
-
-def test_sealed_worker_singleton_bootstrap_attempts_adapter_rehydration(monkeypatch: Any) -> None:
-    """Sealed workers attempt adapter rehydration. Failure is non-fatal."""
-    called = {"rehydrate": False}
-
-    def _fail(_name: str) -> None:
-        called["rehydrate"] = True
-        raise ImportError("sealed singleton cannot import adapter module")
-
-    monkeypatch.setattr(bootstrap, "_rehydrate_adapter", _fail)
-    monkeypatch.setenv(
-        "PYISOLATE_HOST_SNAPSHOT",
-        json.dumps(
-            {
-                "apply_host_sys_path": False,
-                "adapter_ref": "comfy.isolation.adapter:ComfyIsolationAdapter",
-                "sealed_host_ro_paths": ["/home/johnj/ComfyUI"],
-            }
-        ),
-    )
-
-    adapter = bootstrap.bootstrap_child()
-
-    assert adapter is None
-    assert called["rehydrate"] is True

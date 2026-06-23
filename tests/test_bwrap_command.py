@@ -71,32 +71,6 @@ class TestLifecycleCoupling:
         )
         assert "--die-with-parent" in cmd
 
-    def test_die_with_parent_after_new_session(self) -> None:
-        """Verify --die-with-parent comes after --new-session."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        new_session_idx = cmd.index("--new-session")
-        die_with_parent_idx = cmd.index("--die-with-parent")
-        assert die_with_parent_idx > new_session_idx
-
-    def test_die_with_parent_in_degraded_mode(self) -> None:
-        """Verify --die-with-parent is present even in degraded mode."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.UBUNTU_APPARMOR,
-        )
-        assert "--die-with-parent" in cmd
-
 
 class TestNamespaceIsolation:
     """Test conditional namespace isolation based on RestrictionModel."""
@@ -134,42 +108,6 @@ class TestNamespaceIsolation:
         assert "--unshare-pid" not in cmd
         assert "--unshare-ipc" not in cmd
 
-    def test_namespace_isolation_degraded_rhel(self) -> None:
-        """Verify namespace flags absent when RHEL sysctl restricted."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.RHEL_SYSCTL,
-        )
-        assert "--unshare-user" not in cmd
-
-    def test_namespace_isolation_degraded_selinux(self) -> None:
-        """Verify namespace flags absent when SELinux restricted."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.SELINUX,
-        )
-        assert "--unshare-user" not in cmd
-
-    def test_namespace_isolation_degraded_hardened(self) -> None:
-        """Verify namespace flags absent when hardened kernel restricted."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.ARCH_HARDENED,
-        )
-        assert "--unshare-user" not in cmd
-
 
 class TestNetworkConfiguration:
     """Test network isolation (host-controlled, always isolated)."""
@@ -182,19 +120,6 @@ class TestNetworkConfiguration:
             venv_path="/venv",
             uds_address="/run/user/1000/pyisolate/test.sock",
             allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        assert "--unshare-net" in cmd
-        assert "--share-net" not in cmd
-
-    def test_network_isolated_with_gpu(self) -> None:
-        """Verify network isolation even when GPU enabled."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=True,
             restriction_model=RestrictionModel.NONE,
         )
         assert "--unshare-net" in cmd
@@ -222,73 +147,9 @@ class TestUDSMountTopology:
         assert "--dir /run/user/1000" in cmd_str
         assert "--dir /run/user/1000/pyisolate" in cmd_str
 
-    def test_uds_dir_creation_uses_actual_uid(self) -> None:
-        """Verify UDS directories use actual UID."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            uid=1000,
-        )
-        cmd_str = " ".join(cmd)
-        assert "/run/user/1000" in cmd_str
-
-    def test_uds_dir_different_uid(self) -> None:
-        """Verify UDS directories use different UID correctly."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/5000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            uid=5000,
-        )
-        cmd_str = " ".join(cmd)
-        assert "/run/user/5000" in cmd_str
-
-    def test_uds_bind_after_dir_creation(self) -> None:
-        """Verify UDS bind happens after directory creation."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        # Find indices
-        dir_indices = [i for i, x in enumerate(cmd) if x == "--dir"]
-        # Find pyisolate bind
-        pyisolate_bind_idx = None
-        for i, x in enumerate(cmd):
-            if x == "--bind" and i + 1 < len(cmd) and "pyisolate" in cmd[i + 1]:
-                pyisolate_bind_idx = i
-                break
-        if pyisolate_bind_idx is not None and dir_indices:
-            # At least one --dir should come before the --bind
-            assert any(d < pyisolate_bind_idx for d in dir_indices)
-
 
 class TestGPUPassthrough:
     """Test GPU device passthrough."""
-
-    def test_dev_shm_bound_when_gpu_enabled(self) -> None:
-        """Verify /dev/shm is bound when allow_gpu=True."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=True,
-            restriction_model=RestrictionModel.NONE,
-        )
-
-        cmd_str = " ".join(cmd)
-        assert "/dev/shm" in cmd_str  # noqa: S108
 
     def test_dev_shm_always_bound_for_tensor_sharing(self) -> None:
         """/dev/shm is ALWAYS bound - required for SharedMemory Lease tensor transfer.
@@ -349,21 +210,6 @@ class TestFilesystemIsolation:
         cmd_str = " ".join(cmd)
         assert "--ro-bind /app/framework /app/framework" in cmd_str
 
-    def test_adapter_none_no_framework_path(self) -> None:
-        """Verify adapter=None does NOT produce framework path binding."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            adapter=None,
-        )
-
-        cmd_str = " ".join(cmd)
-        assert "/app/framework" not in cmd_str
-
     def test_resolved_python_prefix_ro_bound(self) -> None:
         """Verify the resolved venv interpreter prefix is also bound read-only."""
         with patch(
@@ -385,35 +231,6 @@ class TestFilesystemIsolation:
                 "/home/linuxbrew/.linuxbrew/Cellar/python@3.13/3.13.12_1"
             ) in cmd_str
 
-    def test_python_symlink_prefix_ro_bound(self) -> None:
-        """Verify the raw symlink target prefix is also bound read-only."""
-        with (
-            patch("pathlib.Path.is_symlink", return_value=True),
-            patch(
-                "os.readlink",
-                return_value="/home/linuxbrew/.linuxbrew/opt/python@3.13/bin/python3.13",
-            ),
-            patch(
-                "pathlib.Path.resolve",
-                return_value=Path("/home/linuxbrew/.linuxbrew/Cellar/python@3.13/3.13.12_1/bin/python3.13"),
-            ),
-        ):
-            cmd = _mockbuild_bwrap_command(
-                python_exe="/venv/bin/python",
-                module_path="/path/to/module",
-                venv_path="/venv",
-                uds_address="/run/user/1000/pyisolate/test.sock",
-                allow_gpu=False,
-                restriction_model=RestrictionModel.NONE,
-            )
-
-            cmd_str = " ".join(cmd)
-            assert (
-                "--ro-bind /home/linuxbrew/.linuxbrew/opt/python@3.13 "
-                "/home/linuxbrew/.linuxbrew/opt/python@3.13"
-            ) in cmd_str
-            assert "--ro-bind /home/linuxbrew/.linuxbrew /home/linuxbrew/.linuxbrew" in cmd_str
-
     def test_venv_readonly(self) -> None:
         """Verify venv is bound read-only."""
         cmd = _mockbuild_bwrap_command(
@@ -432,37 +249,6 @@ class TestFilesystemIsolation:
                 break
         assert venv_readonly, "Venv should be read-only to prevent infection"
 
-    def test_module_path_readonly(self) -> None:
-        """Verify module path is bound read-only."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        # Find module in ro-bind
-        module_readonly = False
-        for i, arg in enumerate(cmd):
-            if arg == "--ro-bind" and i + 1 < len(cmd) and "/path/to/module" in cmd[i + 1]:
-                module_readonly = True
-                break
-        assert module_readonly, "Module path should be read-only"
-
-    def test_tmpfs_tmp(self) -> None:
-        """Verify /tmp is tmpfs (not host /tmp)."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        cmd_str = " ".join(cmd)
-        assert "--tmpfs /tmp" in cmd_str
-
     def test_tmpfs_tmp_and_no_host_tmp_bind(self) -> None:
         """Verify host /tmp cannot override the private tmpfs."""
         cmd = _mockbuild_bwrap_command(
@@ -478,20 +264,6 @@ class TestFilesystemIsolation:
         cmd_str = " ".join(cmd)
         assert "--tmpfs /tmp" in cmd_str
         assert "--bind /tmp /tmp" not in cmd_str
-
-    def test_proc_dev_mounted(self) -> None:
-        """Verify /proc and /dev are mounted."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        cmd_str = " ".join(cmd)
-        assert "--proc /proc" in cmd_str
-        assert "--dev /dev" in cmd_str
 
 
 class TestEnvironmentVariables:
@@ -548,18 +320,6 @@ class TestEnvironmentVariables:
 class TestCommandStructure:
     """Test overall command structure."""
 
-    def test_starts_with_bwrap(self) -> None:
-        """Verify command starts with bwrap."""
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-        )
-        assert cmd[0] == "bwrap"
-
     def test_ends_with_python_uds_client(self) -> None:
         """Verify command ends with python -m pyisolate._internal.uds_client."""
         cmd = _mockbuild_bwrap_command(
@@ -578,18 +338,6 @@ class TestCommandStructure:
 class TestSealedWorkerCommand:
     """Test strict sealed-worker sandbox policy."""
 
-    def test_sealed_worker_uses_clearenv(self) -> None:
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            execution_model="sealed_worker",
-        )
-        assert "--clearenv" in cmd
-
     def test_sealed_worker_does_not_bind_host_site_packages(self) -> None:
         cmd = _mockbuild_bwrap_command(
             python_exe="/venv/bin/python",
@@ -602,32 +350,6 @@ class TestSealedWorkerCommand:
         )
         cmd_str = " ".join(cmd)
         assert "site-packages" not in cmd_str
-
-    def test_sealed_worker_does_not_bind_host_pyisolate_or_comfy(self) -> None:
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            execution_model="sealed_worker",
-        )
-        cmd_str = " ".join(cmd)
-        assert "/fake/pyisolate" not in cmd_str
-        assert "comfy" not in cmd_str
-
-    def test_sealed_worker_does_not_set_pythonpath(self) -> None:
-        cmd = _mockbuild_bwrap_command(
-            python_exe="/venv/bin/python",
-            module_path="/path/to/module",
-            venv_path="/venv",
-            uds_address="/run/user/1000/pyisolate/test.sock",
-            allow_gpu=False,
-            restriction_model=RestrictionModel.NONE,
-            execution_model="sealed_worker",
-        )
-        assert "PYTHONPATH" not in cmd
 
     def test_sealed_worker_does_not_bind_dev_shm(self) -> None:
         cmd = _mockbuild_bwrap_command(

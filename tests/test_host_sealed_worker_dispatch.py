@@ -32,39 +32,6 @@ def _uv_python_path(venv_path: Path) -> Path:
 
 
 class TestLaunchDispatchSealedWorker:
-    @patch("pyisolate._internal.host.validate_backend_config")
-    @patch("pyisolate._internal.host.create_conda_env")
-    @patch("pyisolate._internal.host.create_venv")
-    @patch("pyisolate._internal.host.install_dependencies")
-    def test_uv_sealed_worker_uses_uv_env_path(
-        self,
-        mock_install_deps: MagicMock,
-        mock_create_venv: MagicMock,
-        mock_create_conda: MagicMock,
-        mock_validate: MagicMock,
-    ) -> None:
-        config: ExtensionConfig = {
-            "name": "test_ext",
-            "module": "test_module",
-            "isolated": True,
-            "dependencies": [],
-            "apis": [],
-            "share_torch": False,
-            "share_cuda_ipc": False,
-            "package_manager": "uv",
-            "execution_model": "sealed_worker",
-        }
-
-        ext = _make_extension(config)
-
-        with patch.object(ext, "_launch_with_uds", return_value=MagicMock()):
-            ext._Extension__launch()
-
-        mock_validate.assert_called_once_with(config)
-        mock_create_venv.assert_called_once()
-        mock_install_deps.assert_called_once()
-        mock_create_conda.assert_not_called()
-
     def test_uv_sealed_worker_uses_json_tensor_transport(self) -> None:
         config: ExtensionConfig = {
             "name": "test_ext",

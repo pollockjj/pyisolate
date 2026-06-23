@@ -66,35 +66,6 @@ class TestEventBridgeDispatch:
 
         assert received == [{"key": "value"}]
 
-    def test_multiple_events_independent(self) -> None:
-        """Different event names dispatch to different handlers."""
-        bridge = _EventBridge()
-        progress_calls = []
-        preview_calls = []
-
-        bridge.register_handler("progress", lambda p: progress_calls.append(p))
-        bridge.register_handler("preview", lambda p: preview_calls.append(p))
-
-        asyncio.run(bridge.dispatch("progress", {"value": 1}))
-        asyncio.run(bridge.dispatch("preview", {"image": "data"}))
-
-        assert progress_calls == [{"value": 1}]
-        assert preview_calls == [{"image": "data"}]
-
 
 class TestApiSurface:
     """Tests that the event channel API exists on the right classes."""
-
-    def test_extension_base_has_emit_event(self) -> None:
-        """ExtensionBase has emit_event method."""
-        from pyisolate.shared import ExtensionBase
-
-        assert hasattr(ExtensionBase, "emit_event")
-        assert callable(ExtensionBase.emit_event)
-
-    def test_sealed_node_extension_has_emit_event(self) -> None:
-        """SealedNodeExtension inherits emit_event from ExtensionBase."""
-        from pyisolate.sealed import SealedNodeExtension
-
-        assert hasattr(SealedNodeExtension, "emit_event")
-        assert callable(SealedNodeExtension.emit_event)

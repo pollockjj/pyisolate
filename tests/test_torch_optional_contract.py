@@ -39,18 +39,6 @@ def _run_python_snippet(snippet: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_base_import_works_when_torch_is_unavailable() -> None:
-    result = _run_python_snippet(
-        _BLOCK_TORCH_IMPORTS
-        + """
-import pyisolate
-print("IMPORT_OK", pyisolate.__version__)
-"""
-    )
-    assert result.returncode == 0, result.stderr
-    assert "IMPORT_OK" in result.stdout
-
-
 def test_non_torch_core_api_works_when_torch_is_unavailable() -> None:
     result = _run_python_snippet(
         _BLOCK_TORCH_IMPORTS

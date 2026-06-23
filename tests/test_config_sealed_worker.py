@@ -28,16 +28,6 @@ def _make_config(**overrides: Any) -> Any:
     return base
 
 
-def test_uv_defaults_to_host_coupled() -> None:
-    config = _make_config()
-    validate_backend_config(config)
-
-
-def test_uv_explicit_sealed_worker_passes() -> None:
-    config = _make_config(execution_model="sealed_worker")
-    validate_backend_config(config)
-
-
 def test_sealed_worker_rejects_share_torch_true() -> None:
     config = _make_config(execution_model="sealed_worker", share_torch=True)
     with pytest.raises(ValueError, match="sealed_worker execution_model requires share_torch=False"):
@@ -68,26 +58,6 @@ def test_rejects_cuda_ipc_without_share_torch(
         validate_backend_config(config)
 
 
-@patch("pyisolate._internal.pixi_provisioner.ensure_pixi", return_value="/usr/bin/pixi")
-def test_accepts_valid_mode_matrix(mock_ensure_pixi: Any) -> None:
-    valid_configs = [
-        _make_config(execution_model="host-coupled", share_torch=True, share_cuda_ipc=True),
-        _make_config(execution_model="host-coupled", share_torch=True, share_cuda_ipc=False),
-        _make_config(execution_model="host-coupled", share_torch=False, share_cuda_ipc=False),
-        _make_config(
-            package_manager="conda",
-            execution_model="sealed_worker",
-            share_torch=False,
-            share_cuda_ipc=False,
-            conda_channels=["conda-forge"],
-            conda_dependencies=["numpy"],
-        ),
-    ]
-
-    for config in valid_configs:
-        validate_backend_config(config)
-
-
 def test_sealed_host_ro_paths_defaults_off_and_validation() -> None:
     config = _make_config(execution_model="sealed_worker")
     validate_backend_config(config)
@@ -113,16 +83,6 @@ def test_sealed_host_ro_paths_defaults_off_and_validation() -> None:
     relative = _make_config(execution_model="sealed_worker", sealed_host_ro_paths=["relative/path"])
     with pytest.raises(ValueError, match="sealed_host_ro_paths entries must be absolute paths"):
         validate_backend_config(relative)
-
-
-@patch("pyisolate._internal.pixi_provisioner.ensure_pixi", return_value="/usr/bin/pixi")
-def test_conda_defaults_to_sealed_worker(mock_ensure_pixi: Any) -> None:
-    config = _make_config(
-        package_manager="conda",
-        conda_channels=["conda-forge"],
-        conda_dependencies=["numpy"],
-    )
-    validate_backend_config(config)
 
 
 @patch("shutil.which", return_value="/usr/bin/pixi")

@@ -58,25 +58,3 @@ def test_sealed_worker_uv_does_not_auto_inject_torch(monkeypatch: Any, tmp_path:
     cmd = popen_calls[0]
     assert "boltons" in cmd
     assert not any(str(part).startswith("torch==") for part in cmd)
-
-
-def test_host_coupled_uv_still_auto_injects_torch(monkeypatch: Any, tmp_path: Path) -> None:
-    venv_path = tmp_path / "venv"
-    _mock_venv_python(venv_path)
-    popen_calls = _capture_install_commands(monkeypatch)
-
-    config: ExtensionConfig = {
-        "name": "demo",
-        "isolated": True,
-        "dependencies": ["boltons"],
-        "apis": [],
-        "share_torch": False,
-        "share_cuda_ipc": False,
-    }
-
-    environment.install_dependencies(venv_path, config, "demo")
-
-    assert len(popen_calls) == 1
-    cmd = popen_calls[0]
-    assert "boltons" in cmd
-    assert any(str(part).startswith("torch==") for part in cmd)

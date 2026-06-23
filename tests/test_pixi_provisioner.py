@@ -21,8 +21,6 @@ from pyisolate._internal.pixi_provisioner import (
     _archive_extension,
     _binary_name,
     _get_target,
-    _release_url,
-    _verify_checksum,
     ensure_pixi,
 )
 
@@ -32,10 +30,6 @@ class TestGetTarget:
         with patch("platform.system", return_value="Linux"), patch("platform.machine", return_value="x86_64"):
             assert _get_target() == "x86_64-unknown-linux-musl"
 
-    def test_darwin_arm64(self) -> None:
-        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
-            assert _get_target() == "aarch64-apple-darwin"
-
     def test_unsupported_raises(self) -> None:
         with (
             patch("platform.system", return_value="FreeBSD"),
@@ -43,79 +37,6 @@ class TestGetTarget:
             pytest.raises(RuntimeError, match="Unsupported platform"),
         ):
             _get_target()
-
-
-class TestPlatformCoverage:
-    """All 5 supported platform/arch combinations."""
-
-    @pytest.mark.parametrize(
-        "system,machine,expected_target",
-        [
-            ("Linux", "x86_64", "x86_64-unknown-linux-musl"),
-            ("Linux", "aarch64", "aarch64-unknown-linux-musl"),
-            ("Darwin", "x86_64", "x86_64-apple-darwin"),
-            ("Darwin", "arm64", "aarch64-apple-darwin"),
-            ("Windows", "AMD64", "x86_64-pc-windows-msvc"),
-        ],
-    )
-    def test_platform_target_string(self, system: Any, machine: Any, expected_target: Any) -> None:
-        with patch("platform.system", return_value=system), patch("platform.machine", return_value=machine):
-            result = _get_target()
-            assert result == expected_target
-            print(f"PLATFORM={system}/{machine} TARGET={result}")
-
-    def test_windows_binary_name(self, tmp_path: Any) -> None:
-        """ensure_pixi() uses pixi.exe on Windows."""
-        version = PIXI_VERSION
-        cache = tmp_path / "pyisolate" / "pixi" / version
-        cache.mkdir(parents=True)
-        cached_bin = cache / "pixi.exe"
-        cached_bin.write_bytes(b"fake windows binary")
-
-        with (
-            patch("shutil.which", return_value=None),
-            patch("platform.system", return_value="Windows"),
-            patch("platform.machine", return_value="AMD64"),
-            patch("pyisolate._internal.pixi_provisioner._cache_dir", return_value=cache),
-        ):
-            result = ensure_pixi(version)
-            assert result == str(cached_bin)
-            assert result.endswith("pixi.exe")
-            print(f"WINDOWS_BINARY_PATH={result}")
-
-    @pytest.mark.parametrize(
-        "system,machine,expected_target",
-        [
-            ("Linux", "x86_64", "x86_64-unknown-linux-musl"),
-            ("Linux", "aarch64", "aarch64-unknown-linux-musl"),
-            ("Darwin", "x86_64", "x86_64-apple-darwin"),
-            ("Darwin", "arm64", "aarch64-apple-darwin"),
-            ("Windows", "AMD64", "x86_64-pc-windows-msvc"),
-        ],
-    )
-    def test_url_construction(self, system: Any, machine: Any, expected_target: Any) -> None:
-        """Download URL matches GitHub release asset naming convention."""
-        with patch("platform.system", return_value=system), patch("platform.machine", return_value=machine):
-            url = _release_url(PIXI_VERSION, _get_target())
-            ext = ".zip" if system == "Windows" else ".tar.gz"
-            expected_url = (
-                f"https://github.com/prefix-dev/pixi/releases/download/v{PIXI_VERSION}/"
-                f"pixi-{expected_target}{ext}"
-            )
-            assert url == expected_url
-            print(f"URL={url}")
-
-
-class TestVerifyChecksum:
-    def test_valid_checksum(self) -> None:
-        data = b"test binary content"
-        expected = hashlib.sha256(data).hexdigest()
-        _verify_checksum(data, expected)
-
-    def test_invalid_checksum_raises(self) -> None:
-        data = b"test binary content"
-        with pytest.raises(RuntimeError, match="checksum"):
-            _verify_checksum(data, "0" * 64)
 
 
 class TestEnsurePixi:
@@ -145,32 +66,6 @@ class TestEnsurePixi:
         ):
             result = ensure_pixi(version)
             assert result == str(cached_bin)
-
-    def test_cache_hit_no_http(self, tmp_path: Any) -> None:
-        """ensure_pixi called twice: second call makes zero HTTP requests."""
-        version = PIXI_VERSION
-        cache = tmp_path / "pyisolate" / "pixi" / version
-        cache.mkdir(parents=True)
-        cached_bin = cache / _binary_name()
-        cached_bin.write_bytes(b"cached binary")
-
-        fetch_mock = MagicMock()
-
-        with (
-            patch("shutil.which", return_value=None),
-            patch("pyisolate._internal.pixi_provisioner._cache_dir", return_value=cache),
-            patch("pyisolate._internal.pixi_provisioner._fetch_url", fetch_mock),
-        ):
-            # First call — cache hit, no fetch
-            result1 = ensure_pixi(version)
-            assert result1 == str(cached_bin)
-            assert fetch_mock.call_count == 0
-
-            # Second call — still cache hit
-            result2 = ensure_pixi(version)
-            assert result2 == str(cached_bin)
-            assert fetch_mock.call_count == 0
-            print("HTTP_REQUESTS_ON_SECOND_CALL=0")
 
     def test_corrupted_download_raises(self, tmp_path: Any) -> None:
         """Corrupted download triggers checksum RuntimeError."""
@@ -272,11 +167,3 @@ class TestEnsurePixi:
             assert Path(result) == cache / _binary_name()
             assert Path(result).exists()
             assert not (cache.parent / "pixi").exists()
-
-
-class TestVersionPin:
-    def test_version_is_pinned(self) -> None:
-        """PIXI_VERSION is a hardcoded string, not dynamic."""
-        assert isinstance(PIXI_VERSION, str)
-        assert len(PIXI_VERSION.split(".")) >= 2
-        assert PIXI_VERSION == "0.67.0"

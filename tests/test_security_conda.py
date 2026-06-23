@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import re
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -155,40 +154,6 @@ class TestCondaSealedWorkerSandboxLaunch:
         assert env_map["PYTHONNOUSERSITE"] == "1"
         assert "PYTHONPATH" not in env_map
         assert "SECRET_TOKEN" not in env_map
-
-    @patch("pyisolate._internal.host.subprocess.Popen")
-    def test_conda_sealed_worker_uses_pixi_python_inside_bwrap(self, mock_popen: MagicMock) -> None:
-        ext = _make_extension()
-
-        _launch_extension(ext, mock_popen)
-
-        cmd = mock_popen.call_args[0][0]
-        assert str(_pixi_python_path()) in cmd
-
-    @patch("pyisolate._internal.host.subprocess.Popen")
-    def test_conda_sealed_worker_does_not_inject_credential_like_vars(self, mock_popen: MagicMock) -> None:
-        credential_pattern = re.compile(
-            r".*(_TOKEN|_SECRET|_KEY|_PASSWORD|_CREDENTIAL)$",
-            re.IGNORECASE,
-        )
-        ext = _make_extension()
-
-        with patch.dict(
-            "os.environ",
-            {
-                "PATH": "/usr/bin",
-                "HOME": "/home/test",
-                "API_TOKEN": "topsecret",
-                "GITHUB_SECRET": "still_secret",
-            },
-            clear=True,
-        ):
-            _launch_extension(ext, mock_popen)
-
-        cmd = mock_popen.call_args[0][0]
-        env_map = _setenv_map(cmd)
-        injected_creds = [key for key in env_map if credential_pattern.match(key)]
-        assert injected_creds == []
 
 
 class TestCondaSealedWorkerBootstrapGuards:

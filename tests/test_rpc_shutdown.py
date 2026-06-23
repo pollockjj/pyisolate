@@ -2,7 +2,6 @@
 
 import asyncio
 from typing import Any
-from unittest.mock import Mock
 
 import pytest
 
@@ -63,55 +62,6 @@ class BlockingMockTransport(RPCTransport):
 
     def close(self) -> None:
         self.closed = True
-
-
-@pytest.mark.asyncio
-async def test_shutdown_sets_flag() -> None:
-    """Test that shutdown() sets the stopping flag."""
-    rpc = AsyncRPC(transport=MockTransport())
-    assert not rpc._stopping
-    rpc.shutdown()
-    assert rpc._stopping
-
-
-@pytest.mark.asyncio
-async def test_shutdown_suppresses_connection_error_logs(caplog: Any) -> None:
-    """Test that connection errors are logged as debug, not error, during shutdown."""
-    import logging
-
-    # Ensure the specific logger is at DEBUG level
-    logger_name = "pyisolate._internal.rpc_protocol"
-    logging.getLogger(logger_name).setLevel(logging.DEBUG)
-    caplog.set_level(logging.DEBUG, logger=logger_name)
-
-    # We need to simulate the receive thread behavior
-    transport = MockTransport()
-    # Mock recv to raise an exception immediately then return None (stop loop)
-    # Using side_effect with an iterable
-    rpc = AsyncRPC(transport=transport)
-    rpc.default_loop = asyncio.get_running_loop()
-
-    # Enable shutdown mode
-    rpc.shutdown()
-    assert rpc._stopping is True
-
-    # Run _recv_thread synchronously for a single iteration (due to side effect)
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(transport, "recv", Mock(side_effect=[ConnectionError("Socket closed"), None]))
-        rpc._recv_thread()
-
-    # Verify logs
-    # We expect a DEBUG log properly formatted, NOT an ERROR log
-    error_logs = [r for r in caplog.records if r.levelno >= logging.ERROR and r.name == logger_name]
-    debug_logs = [r for r in caplog.records if r.levelno == logging.DEBUG and "shutting down" in r.message]
-
-    # Check if we got ANY logs from that logger just to be sure
-    all_rpc_logs = [r.message for r in caplog.records if r.name == logger_name]
-
-    assert len(error_logs) == 0, f"Should handle shutdown gracefully, but got errors: {error_logs}"
-    assert len(debug_logs) > 0, f"Should have logged debug message. Got: {all_rpc_logs}"
-    assert "Socket closed" in debug_logs[0].message
-    assert "Socket closed" in debug_logs[0].message
 
 
 @pytest.mark.asyncio

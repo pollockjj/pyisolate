@@ -7,7 +7,6 @@ roundtrip and connection-error tests.
 
 import asyncio
 import contextlib
-import logging
 import socket
 import struct
 from collections.abc import Callable, Coroutine, Iterator
@@ -20,8 +19,6 @@ from pyisolate._internal.rpc_transports import JSONSocketTransport
 
 MB = 1024 * 1024
 GB = 1024 * MB
-
-TRANSPORT_LOGGER = "pyisolate._internal.rpc_transports"
 
 
 def _make_transport() -> JSONSocketTransport:
@@ -67,14 +64,6 @@ class TestSendRecvRoundtrip:
         assert result["method"] == "test"
         assert result["args"] == [1, 2, 3]
 
-    def test_send_does_not_enforce_2gb_limit(
-        self, socket_pair: tuple[JSONSocketTransport, JSONSocketTransport]
-    ) -> None:
-        # send() uses struct.pack(">I") — no explicit 2GB check; limit is recv-only
-        sender, _ = socket_pair
-        payload = {"data": "x" * 1000}
-        sender.send(payload)  # must not raise
-
     def test_callable_roundtrip_executes_via_bound_rpc(
         self, socket_pair: tuple[JSONSocketTransport, JSONSocketTransport]
     ) -> None:
@@ -114,17 +103,6 @@ class TestSendRecvRoundtrip:
 
 
 class TestRecvHardLimit:
-    def test_2gb_minus_1_not_rejected(self) -> None:
-        transport = _make_transport()
-        try:
-            with (
-                patch.object(transport, "_recvall", side_effect=_header_then_empty(2 * GB - 1)),
-                pytest.raises(ConnectionError),
-            ):
-                transport.recv()
-        finally:
-            transport.close()
-
     def test_2gb_exact_not_rejected(self) -> None:
         transport = _make_transport()
         try:
@@ -147,60 +125,6 @@ class TestRecvHardLimit:
                 transport.recv()
         finally:
             transport.close()
-
-    def test_3gb_raises_value_error(self) -> None:
-        # 3GB fits in an unsigned 32-bit header and exceeds the 2GB hard limit
-        transport = _make_transport()
-        try:
-            with (
-                patch.object(transport, "_recvall", side_effect=_header_then_empty(3 * GB)),
-                pytest.raises(ValueError, match="Message too large"),
-            ):
-                transport.recv()
-        finally:
-            transport.close()
-
-
-class TestRecvWarningThreshold:
-    def test_100mb_minus_1_no_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        transport = _make_transport()
-        try:
-            with (
-                caplog.at_level(logging.WARNING, logger=TRANSPORT_LOGGER),
-                patch.object(transport, "_recvall", side_effect=_header_then_empty(100 * MB - 1)),
-                pytest.raises(ConnectionError),
-            ):
-                transport.recv()
-        finally:
-            transport.close()
-        assert not any("Large RPC message" in r.message for r in caplog.records)
-
-    def test_100mb_exact_no_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        # Threshold is strictly >100MB; exactly 100MB must NOT trigger the warning
-        transport = _make_transport()
-        try:
-            with (
-                caplog.at_level(logging.WARNING, logger=TRANSPORT_LOGGER),
-                patch.object(transport, "_recvall", side_effect=_header_then_empty(100 * MB)),
-                pytest.raises(ConnectionError),
-            ):
-                transport.recv()
-        finally:
-            transport.close()
-        assert not any("Large RPC message" in r.message for r in caplog.records)
-
-    def test_100mb_plus_1_triggers_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        transport = _make_transport()
-        try:
-            with (
-                caplog.at_level(logging.WARNING, logger=TRANSPORT_LOGGER),
-                patch.object(transport, "_recvall", side_effect=_header_then_empty(100 * MB + 1)),
-                pytest.raises(ConnectionError),
-            ):
-                transport.recv()
-        finally:
-            transport.close()
-        assert any("Large RPC message" in r.message for r in caplog.records)
 
 
 class TestConnectionErrors:

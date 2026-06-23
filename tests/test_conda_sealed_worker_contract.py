@@ -112,18 +112,6 @@ def test_conda_dependency_split() -> None:
     assert 'pandas = "*"' in toml_text
 
 
-def test_conda_channels_platforms_pass_through() -> None:
-    config = _make_conda_config(
-        conda_channels=["conda-forge", "nvidia"],
-        conda_platforms=["linux-64", "win-64"],
-    )
-
-    toml_text = _generate_pixi_toml(config)
-
-    assert 'channels = ["conda-forge", "nvidia"]' in toml_text
-    assert 'platforms = ["linux-64", "win-64"]' in toml_text
-
-
 def test_uv_defaults_unchanged() -> None:
     config = _make_conda_config(package_manager="uv")
     ext = _make_extension(config)

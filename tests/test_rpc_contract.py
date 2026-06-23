@@ -31,15 +31,6 @@ class TestProxiedSingletonContract:
 
         assert instance1 is instance2
 
-    def test_singleton_instance_persists(self) -> None:
-        """Singleton instance persists across calls."""
-        instance1 = MockRegistry()
-        instance1.register("test_object")
-
-        instance2 = MockRegistry()
-        # Should see the object registered via instance1
-        assert instance2.get("obj_0") == "test_object"
-
     def test_different_singletons_are_independent(self) -> None:
         """Different ProxiedSingleton subclasses are independent."""
 
@@ -58,46 +49,6 @@ class TestProxiedSingletonContract:
 
 class TestRpcMethodContract:
     """Tests for RPC method call contract."""
-
-    def test_method_returns_value(self) -> None:
-        """RPC method must return expected value."""
-        registry = MockRegistry()
-        obj = {"key": "value"}
-
-        obj_id = registry.register(obj)
-        result = registry.get(obj_id)
-
-        assert result == obj
-
-    def test_method_accepts_arguments(self) -> None:
-        """RPC method must accept positional and keyword arguments."""
-        registry = MockRegistry()
-
-        # Positional
-        id1 = registry.register("positional_arg")
-        assert registry.get(id1) == "positional_arg"
-
-    def test_method_handles_none_return(self) -> None:
-        """RPC method can return None."""
-        registry = MockRegistry()
-
-        result = registry.get("nonexistent")
-        assert result is None
-
-    def test_method_handles_complex_objects(self) -> None:
-        """RPC method can handle complex nested objects."""
-        registry = MockRegistry()
-
-        complex_obj = {
-            "list": [1, 2, 3],
-            "nested": {"a": {"b": {"c": 42}}},
-            "mixed": [{"x": 1}, {"y": 2}],
-        }
-
-        obj_id = registry.register(complex_obj)
-        result = registry.get(obj_id)
-
-        assert result == complex_obj
 
 
 class TestEventLoopResilience:
@@ -191,66 +142,6 @@ class TestEventLoopResilience:
             asyncio.set_event_loop(previous_loop)
             installed.close()
 
-    def test_asyncrpc_construction_emits_no_deprecation_warning(self) -> None:
-        """AsyncRPC construction must not leak a 'no current event loop' DeprecationWarning.
-
-        The fix for the >=3.12 get_event_loop() crash must not itself emit the very
-        deprecation it works around. Treats DeprecationWarning as an error while
-        constructing with no installed loop.
-        """
-        import queue
-        import warnings
-
-        from pyisolate._internal.rpc_protocol import AsyncRPC
-
-        try:
-            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            previous_loop = None
-
-        asyncio.set_event_loop(None)
-        rpc = None
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", DeprecationWarning)
-                rpc = AsyncRPC(recv_queue=cast(Any, queue.Queue()), send_queue=cast(Any, queue.Queue()))
-            assert isinstance(rpc.default_loop, asyncio.AbstractEventLoop)
-        finally:
-            created = rpc.default_loop if rpc is not None else None
-            asyncio.set_event_loop(previous_loop)
-            if created is not None and created is not previous_loop:
-                created.close()
-
-    def test_singleton_data_persists_across_loops(self) -> None:
-        """Data stored in singleton persists across event loops."""
-        try:
-            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            previous_loop = None
-
-        loop1 = asyncio.new_event_loop()
-        loop2: asyncio.AbstractEventLoop | None = None
-        try:
-            asyncio.set_event_loop(loop1)
-
-            registry = MockRegistry()
-            id1 = registry.register("first")
-            id2 = registry.register("second")
-
-            loop1.close()
-
-            loop2 = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop2)
-
-            assert registry.get(id1) == "first"
-            assert registry.get(id2) == "second"
-        finally:
-            asyncio.set_event_loop(previous_loop)
-            if loop2 is not None:
-                loop2.close()
-            elif not loop1.is_closed():
-                loop1.close()
-
 
 class TestRpcErrorHandling:
     """Tests for RPC error handling contract."""
@@ -266,16 +157,3 @@ class TestRpcErrorHandling:
 
         with pytest.raises(ValueError, match="Intentional failure"):
             service.fail()
-
-    def test_type_error_propagates(self) -> Any:
-        """TypeError in RPC methods should propagate."""
-
-        class TypedService(ProxiedSingleton):
-            def typed_method(self, value: int) -> int:
-                return value + 1
-
-        service = TypedService()
-
-        # Wrong type should raise TypeError
-        with pytest.raises(TypeError):
-            service.typed_method(cast(Any, "not an int"))

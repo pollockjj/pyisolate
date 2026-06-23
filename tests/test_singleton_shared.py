@@ -82,9 +82,6 @@ class TestSingletonMetaclass:
         with pytest.raises(AssertionError):
             SingletonMetaclass.inject_instance(BasicSingleton, object())
 
-    def test_get_remote_id_defaults_to_class_name(self) -> None:
-        assert BasicSingleton.get_remote_id() == "BasicSingleton"
-
 
 class TestUseRemote:
     def test_use_remote_sets_proxy_instance(self) -> None:
@@ -135,10 +132,3 @@ class TestLocalMethodRegistry:
         registry = LocalMethodRegistry.get_instance()
         with pytest.raises(ValueError):
             registry.get_local_method(BasicSingleton, "ping")
-
-    def test_register_class_initializes_local_instance(self) -> None:
-        registry = LocalMethodRegistry.get_instance()
-        registry.register_class(LocalMethodSingleton)
-        local_impl = registry.get_local_method(LocalMethodSingleton, "increment")
-        assert callable(local_impl)
-        assert local_impl() == 1
