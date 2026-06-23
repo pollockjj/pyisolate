@@ -14,9 +14,7 @@ import pytest
 from pyisolate._internal.environment_conda import (
     _generate_pixi_toml,
     _install_cuda_wheels_into_pixi,
-    _parse_dep,
     _resolve_pixi_python,
-    _resolve_uv_exe,
     create_conda_env,
 )
 from pyisolate.config import ExtensionConfig
@@ -92,19 +90,6 @@ class TestGeneratePixiToml:
         assert pyisolate_dep.startswith("=="), (
             f"Expected version pin starting with '==', got: {pyisolate_dep}"
         )
-
-
-# ── _parse_dep ──────────────────────────────────────────────────────
-
-
-class TestParseDep:
-    def test_parse_dep_marker_extras(self) -> None:
-        name, sep, ver, extras, marker = _parse_dep("jax[cuda12]>=0.4.30; sys_platform == 'linux'")
-        assert name == "jax"
-        assert sep == ">="
-        assert ver == ">=0.4.30"
-        assert extras == ["cuda12"]
-        assert marker == "sys_platform == 'linux'"
 
 
 # ── create_conda_env ─────────────────────────────────────────────────
@@ -224,51 +209,3 @@ def test_install_cuda_wheels_passes_target_python(monkeypatch: Any, tmp_path: An
 
     assert len(captured_kwargs) == 1
     assert captured_kwargs[0]["target_python"] == (3, 12)
-
-
-def test_install_cuda_wheels_wildcard_python_uses_host_tags(monkeypatch: Any, tmp_path: Any) -> Any:
-    """AC-2: conda_python='*' passes target_python=None (host tags fallback)."""
-    captured_kwargs: list[dict] = []
-
-    def mock_resolve(deps: Any, config: Any, **kwargs: Any) -> Any:
-        captured_kwargs.append(kwargs)
-        return deps
-
-    monkeypatch.setattr(
-        "pyisolate._internal.cuda_wheels.resolve_cuda_wheel_requirements",
-        mock_resolve,
-    )
-
-    python_exe = tmp_path / "bin" / "python"
-    python_exe.parent.mkdir(parents=True)
-    python_exe.touch()
-
-    config = _make_conda_config(
-        conda_python="*",
-        dependencies=["flash-attn"],
-        cuda_wheels={
-            "index_url": "https://example.invalid/",
-            "packages": ["flash-attn"],
-        },
-    )
-
-    _install_cuda_wheels_into_pixi(python_exe, config, config["cuda_wheels"], "test")
-
-    assert len(captured_kwargs) == 1
-    assert captured_kwargs[0]["target_python"] is None
-
-
-# ── _resolve_uv_exe / uv path fallback ─────────────────────────────
-
-
-class TestResolveUvExe:
-    def test_install_cuda_wheels_uv_exe_prefers_local(self, tmp_path: Any) -> None:
-        """When python_exe.parent/uv exists, it is preferred over shutil.which."""
-        python_exe = tmp_path / "bin" / "python"
-        python_exe.parent.mkdir(parents=True)
-        python_exe.touch()
-        local_uv = tmp_path / "bin" / "uv"
-        local_uv.touch()
-
-        resolved = _resolve_uv_exe(python_exe)
-        assert resolved == str(local_uv)

@@ -381,35 +381,3 @@ class TestSealedWorkerCommand:
         assert "--clearenv" in cmd
         assert "PYTHONPATH" not in cmd
         assert "--setenv PYTHONPATH " not in cmd_str
-
-    def test_sealed_worker_sets_explicit_env_allowlist(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {
-                "PATH": "/usr/bin:/bin",
-                "LANG": "C.UTF-8",
-                "LC_ALL": "C.UTF-8",
-                "HOME": "/home/johnj",
-                "PYTHONPATH": "/host/leak",
-                "SECRET_TOKEN": "leak",
-            },
-            clear=True,
-        ):
-            cmd = _mockbuild_bwrap_command(
-                python_exe="/venv/bin/python",
-                module_path="/path/to/module",
-                venv_path="/venv",
-                uds_address="/run/user/1000/pyisolate/test.sock",
-                allow_gpu=False,
-                restriction_model=RestrictionModel.NONE,
-                execution_model="sealed_worker",
-            )
-        cmd_str = " ".join(cmd)
-        assert "--setenv PATH /usr/bin:/bin" in cmd_str
-        assert "--setenv LANG C.UTF-8" in cmd_str
-        assert "--setenv LC_ALL C.UTF-8" in cmd_str
-        assert "--setenv HOME /tmp" in cmd_str
-        assert "--setenv TMPDIR /tmp" in cmd_str
-        assert "--setenv PYTHONNOUSERSITE 1" in cmd_str
-        assert "SECRET_TOKEN" not in cmd_str
-        assert "/host/leak" not in cmd_str

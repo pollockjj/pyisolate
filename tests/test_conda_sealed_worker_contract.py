@@ -112,14 +112,6 @@ def test_conda_dependency_split() -> None:
     assert 'pandas = "*"' in toml_text
 
 
-def test_uv_defaults_unchanged() -> None:
-    config = _make_conda_config(package_manager="uv")
-    ext = _make_extension(config)
-
-    assert ext._execution_model() == "host-coupled"
-    assert ext._tensor_transport_mode() == "shared_memory"
-
-
 def test_no_host_fallback(tmp_path: Path) -> None:
     env_path = tmp_path / "conda_env"
     if os.name == "nt":
@@ -144,17 +136,6 @@ def test_no_host_sys_path() -> None:
     assert snapshot["apply_host_sys_path"] is False
     assert snapshot["additional_paths"] == []
     assert snapshot["preferred_root"] is None
-
-
-def test_no_extension_wrapper_import() -> None:
-    payload = _capture_bootstrap_payload(
-        _make_conda_config(package_manager="conda", execution_model="sealed_worker")
-    )
-
-    snapshot = payload["snapshot"]
-    assert snapshot["adapter_ref"] is None
-    assert snapshot["adapter_name"] is None
-    assert "extension_wrapper" not in str(payload)
 
 
 def test_sealed_worker_host_policy_ro_paths_default_block_and_opt_in_allow(

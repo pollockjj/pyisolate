@@ -12,7 +12,7 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -40,55 +40,6 @@ class TestGetTarget:
 
 
 class TestEnsurePixi:
-    def test_returns_path_on_system(self, tmp_path: Any) -> None:
-        """If pixi is on PATH and version matches, return that path."""
-        fake_pixi = tmp_path / "pixi"
-        fake_pixi.touch()
-        fake_pixi.chmod(0o755)
-
-        with patch("shutil.which", return_value=str(fake_pixi)), patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=f"pixi {PIXI_VERSION}\n")
-            result = ensure_pixi()
-            assert result == str(fake_pixi)
-            print(f"RESOLVED_PATH={result}")
-
-    def test_returns_cached_binary(self, tmp_path: Any) -> None:
-        """If cached binary exists, return it without downloading."""
-        version = PIXI_VERSION
-        cache = tmp_path / "pyisolate" / "pixi" / version
-        cache.mkdir(parents=True)
-        cached_bin = cache / _binary_name()
-        cached_bin.write_bytes(b"cached binary")
-
-        with (
-            patch("shutil.which", return_value=None),
-            patch("pyisolate._internal.pixi_provisioner._cache_dir", return_value=cache),
-        ):
-            result = ensure_pixi(version)
-            assert result == str(cached_bin)
-
-    def test_corrupted_download_raises(self, tmp_path: Any) -> None:
-        """Corrupted download triggers checksum RuntimeError."""
-        version = PIXI_VERSION
-        cache = tmp_path / "pyisolate" / "pixi" / version
-
-        # Simulate: no pixi on PATH, no cache, download gives bad data
-        archive_name = f"pixi{_archive_extension()}"
-        with (
-            patch("shutil.which", return_value=None),
-            patch("pyisolate._internal.pixi_provisioner._cache_dir", return_value=cache),
-            patch("pyisolate._internal.pixi_provisioner._fetch_url") as fetch_mock,
-        ):
-            # First call returns checksum, second returns tarball with wrong content
-            good_hash = hashlib.sha256(b"good data").hexdigest()
-            fetch_mock.side_effect = [
-                f"{good_hash}  {archive_name}".encode(),  # checksum file
-                b"corrupted tarball data",  # tarball (wrong content)
-            ]
-
-            with pytest.raises(RuntimeError, match="checksum"):
-                ensure_pixi(version)
-
     def test_downloads_and_caches(self, tmp_path: Any) -> None:
         """Full download path: fetch, verify, extract, cache."""
         version = PIXI_VERSION

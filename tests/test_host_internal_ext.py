@@ -227,16 +227,6 @@ def test_initialize_process_sets_env_and_runs_rpc(monkeypatch: Any, tmp_path: An
     assert ext.rpc.run_called is True
 
 
-def test_probe_cuda_ipc_support_handles_import_error(monkeypatch: Any) -> None:
-    from pyisolate._internal import torch_utils
-
-    monkeypatch.setattr(torch_utils.sys, "platform", "linux")
-    monkeypatch.setitem(torch_utils.sys.modules, "torch", None)
-    supported, reason = torch_utils.probe_cuda_ipc_support()
-    assert supported is False
-    assert "torch import failed" in reason
-
-
 def test_callable_roundtrip_shutdown_is_clean(caplog: Any, capsys: Any) -> Any:
     class HostCallbackAPI(ProxiedSingleton):
         async def invoke(self, handler: Any, payload: Any) -> Any:

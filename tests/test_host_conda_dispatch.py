@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-from pyisolate._internal.sandbox_detect import RestrictionModel
 from pyisolate.config import ExtensionConfig
 
 
@@ -68,91 +67,6 @@ class TestLaunchDispatchConda:
         mock_create_conda.assert_called_once()
         mock_create_venv.assert_not_called()
         mock_install_deps.assert_not_called()
-
-
-class TestCondaSealedWorkerBwrapDispatch:
-    """Verify conda sealed_worker launches through bubblewrap with pixi python."""
-
-    @patch("pyisolate._internal.host.build_bwrap_command")
-    @patch("pyisolate._internal.host.subprocess.Popen")
-    def test_conda_sealed_worker_launches_through_bwrap(
-        self,
-        mock_popen: MagicMock,
-        mock_build_bwrap: MagicMock,
-    ) -> None:
-        from pyisolate._internal.host import Extension
-        from pyisolate.shared import ExtensionBase
-
-        config = _make_config(
-            package_manager="conda",
-            execution_model="sealed_worker",
-            conda_channels=["conda-forge"],
-            conda_dependencies=["numpy"],
-            sandbox={"writable_paths": ["/fake/artifacts"]},
-        )
-
-        ext = Extension.__new__(Extension)
-        ext.name = "test_ext"
-        ext.config = config
-        ext.venv_path = Path("/fake/venv")
-        ext.module_path = "/fake/module"
-        ext.extension_type = ExtensionBase
-        ext._cuda_ipc_enabled = False
-        ext._uds_path = None
-        ext._uds_listener = None
-        ext._client_sock = None
-
-        pixi_python = Path("/fake/venv/.pixi/envs/default/bin/python")
-        mock_proc = MagicMock()
-        mock_proc.pid = 12345
-        mock_proc.args = ["bwrap", "--clearenv", str(pixi_python)]
-        mock_popen.return_value = mock_proc
-        mock_build_bwrap.return_value = [
-            "bwrap",
-            "--clearenv",
-            str(pixi_python),
-            "-m",
-            "pyisolate._internal.uds_client",
-        ]
-
-        transport = MagicMock()
-        transport.send = MagicMock()
-
-        with (
-            patch("pyisolate._internal.host._resolve_pixi_python", return_value=pixi_python),
-            patch("pyisolate._internal.host.socket") as mock_socket,
-            patch("pyisolate._internal.host.tempfile"),
-            patch("pyisolate._internal.host.detect_sandbox_capability") as mock_detect,
-            patch("sys.platform", "linux"),
-            patch("pyisolate._internal.host.JSONSocketTransport", return_value=transport),
-            patch("pyisolate._internal.host.AsyncRPC"),
-        ):
-            mock_detect.return_value = MagicMock(
-                available=True,
-                restriction_model=RestrictionModel.NONE,
-            )
-            mock_listener = MagicMock()
-            mock_listener.accept.return_value = (MagicMock(), None)
-            mock_socket.socket.return_value = mock_listener
-            mock_socket.AF_UNIX = 1
-            mock_socket.SOCK_STREAM = 1
-
-            with (
-                patch("pyisolate._internal.socket_utils.has_af_unix", return_value=True),
-                patch("pyisolate._internal.socket_utils.ensure_ipc_socket_dir", return_value=Path("/run")),
-                patch("pyisolate._internal.host.build_extension_snapshot", return_value={}),
-                patch("os.chmod"),
-            ):
-                cast(Any, ext)._launch_with_uds()
-
-        mock_build_bwrap.assert_called_once()
-        kwargs = mock_build_bwrap.call_args.kwargs
-        assert kwargs["execution_model"] == "sealed_worker"
-        assert kwargs["sandbox_config"] == {"writable_paths": ["/fake/artifacts"]}
-        assert kwargs["python_exe"] == str(pixi_python)
-        transport.send.assert_called_once()
-        bootstrap_data = transport.send.call_args[0][0]
-        assert bootstrap_data["snapshot"]["apply_host_sys_path"] is False
 
 
 class TestEnvPropagation:

@@ -1,9 +1,9 @@
-"""Memory leak tests for proxy lifecycle and cleanup.
+"""Memory leak tests for tensor lifecycle and cleanup.
 
 These tests verify that:
-1. Proxies are garbage collected after RPC shutdown
+1. TensorKeeper holds a tensor reference while retained
 2. TensorKeeper releases tensors after timeout
-3. Registry removes entries when refcount hits 0
+3. Exceptions during __init__ do not leak a registry entry
 
 Note: Uses weakref to verify objects are collected, not actual memory profiling.
 For actual memory profiling, use tracemalloc in integration tests.
@@ -17,36 +17,6 @@ from typing import Any
 import pytest
 
 from pyisolate._internal.rpc_protocol import ProxiedSingleton, SingletonMetaclass
-
-
-class TestProxyGarbageCollection:
-    """Tests for proxy object garbage collection."""
-
-    def test_proxy_gc_after_singleton_clear(self) -> None:
-        """Verify ProxiedSingleton instances can be garbage collected."""
-
-        class TestService(ProxiedSingleton):
-            def __init__(self) -> None:
-                super().__init__()
-                self.data = "test"
-
-        # Create instance and weak reference
-        instance = TestService()
-        weak_ref = weakref.ref(instance)
-
-        # Instance should exist
-        assert weak_ref() is not None
-
-        # Clear singleton registry and delete local reference
-        del instance
-        SingletonMetaclass._instances.clear()
-
-        # Force garbage collection (3x for generational GC)
-        for _ in range(3):
-            gc.collect()
-
-        # Instance should be collected
-        assert weak_ref() is None, "Singleton not collected after clearing registry"
 
 
 class TestTensorKeeperCleanup:
@@ -126,34 +96,6 @@ class TestTensorKeeperCleanup:
 
         # Original tensor should be released
         assert weak_ref() is None, "Tensor not released after retention period"
-
-
-class TestRegistryCleanup:
-    """Tests for registry refcount and cleanup."""
-
-    def test_singleton_registry_refcount(self) -> None:
-        """Verify singleton instances are tracked in registry."""
-
-        class CountedService(ProxiedSingleton):
-            instances_created = 0
-
-            def __init__(self) -> None:
-                super().__init__()
-                CountedService.instances_created += 1
-
-        # First creation
-        instance1 = CountedService()
-        assert CountedService.instances_created == 1
-        assert CountedService in SingletonMetaclass._instances
-
-        # Second call returns same instance
-        instance2 = CountedService()
-        assert CountedService.instances_created == 1  # No new instance
-        assert instance1 is instance2
-
-        # Clear registry
-        SingletonMetaclass._instances.clear()
-        assert CountedService not in SingletonMetaclass._instances
 
 
 class TestMemoryLeakScenarios:

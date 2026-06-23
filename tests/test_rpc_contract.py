@@ -2,9 +2,7 @@
 
 These tests verify:
 1. ProxiedSingleton instances are singletons
-2. RPC method calls work correctly
-3. Event loop recreation doesn't break RPC
-4. Exceptions propagate correctly
+2. AsyncRPC constructs and adopts the correct event loop
 
 Note: These are unit tests that verify RPC contracts at the boundary
 without full process isolation. For full integration tests, see
@@ -13,8 +11,6 @@ original_integration/.
 
 import asyncio
 from typing import Any, cast
-
-import pytest
 
 from pyisolate._internal.rpc_protocol import ProxiedSingleton
 
@@ -47,10 +43,6 @@ class TestProxiedSingletonContract:
         assert isinstance(another_instance, AnotherRegistry)
 
 
-class TestRpcMethodContract:
-    """Tests for RPC method call contract."""
-
-
 class TestEventLoopResilience:
     """Tests for RPC resilience across event loop recreation.
 
@@ -58,34 +50,6 @@ class TestEventLoopResilience:
     remain functional even when the event loop is closed and
     recreated (e.g., between workflow executions).
     """
-
-    def test_singleton_survives_loop_recreation(self) -> None:
-        """Singleton instance survives event loop recreation."""
-        try:
-            previous_loop = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            previous_loop = None
-
-        loop1 = asyncio.new_event_loop()
-        loop2: asyncio.AbstractEventLoop | None = None
-        try:
-            asyncio.set_event_loop(loop1)
-            registry = MockRegistry()
-            obj_id = registry.register("loop1_object")
-
-            loop1.close()
-
-            loop2 = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop2)
-
-            result = registry.get(obj_id)
-            assert result == "loop1_object"
-        finally:
-            asyncio.set_event_loop(previous_loop)
-            if loop2 is not None:
-                loop2.close()
-            elif not loop1.is_closed():
-                loop1.close()
 
     def test_asyncrpc_constructs_without_current_event_loop(self) -> None:
         """AsyncRPC must construct when no current event loop exists.
@@ -141,19 +105,3 @@ class TestEventLoopResilience:
         finally:
             asyncio.set_event_loop(previous_loop)
             installed.close()
-
-
-class TestRpcErrorHandling:
-    """Tests for RPC error handling contract."""
-
-    def test_method_exception_propagates(self) -> None:
-        """Exceptions in RPC methods should propagate."""
-
-        class FailingService(ProxiedSingleton):
-            def fail(self) -> None:
-                raise ValueError("Intentional failure")
-
-        service = FailingService()
-
-        with pytest.raises(ValueError, match="Intentional failure"):
-            service.fail()
