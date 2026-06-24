@@ -135,3 +135,11 @@ def test_socket_closed_mid_header_raises() -> None:
         with contextlib.suppress(Exception):
             b.close()
         transport.close()
+
+
+def test_restricted_transport_rejects_generic_object_reconstruction() -> None:
+    transport = JSONSocketTransport(socket.socket(), restricted=True)
+    gadget = {"__pyisolate_object__": True, "module": "builtins", "type": "eval", "data": {"cond": "1"}}
+    with pytest.raises(ValueError, match="sandboxed peer"):
+        transport._json_object_hook(gadget)
+    transport.close()

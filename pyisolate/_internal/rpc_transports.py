@@ -107,11 +107,15 @@ class JSONSocketTransport:
     Used for ALL Linux isolation modes (sandbox and non-sandbox).
     """
 
-    def __init__(self, sock: socket.socket, tensor_transport: str = "shared_memory") -> None:
+    def __init__(
+        self, sock: socket.socket, tensor_transport: str = "shared_memory", restricted: bool = False
+    ) -> None:
         self._sock = sock
         self._lock = threading.Lock()
         self._recv_lock = threading.Lock()
         self._tensor_transport = tensor_transport
+        # Sandboxed (untrusted) peer: disable the generic __dict__/__pyisolate_object__ path.
+        self._restricted = restricted
         self._rpc = None
 
     def bind_rpc(self, rpc: Any) -> None:
@@ -305,7 +309,7 @@ class JSONSocketTransport:
                     return serializer(obj)
 
         # Handle objects with __dict__ (preserve full state)
-        if hasattr(obj, "__dict__") and not callable(obj):
+        if not self._restricted and hasattr(obj, "__dict__") and not callable(obj):
             type_key = f"{type(obj).__module__}.{type(obj).__name__}"
             logger.warning(
                 "⚠️  GENERIC SERIALIZER USED ⚠️  Serializing %s via __dict__ fallback. "
@@ -437,6 +441,11 @@ class JSONSocketTransport:
 
         # Reconstruct generic objects - try to recreate the original class
         if dct.get("__pyisolate_object__"):
+            if self._restricted:
+                raise ValueError(
+                    "Refusing to reconstruct __pyisolate_object__ from a sandboxed peer; "
+                    "register a serializer via SerializerRegistry instead."
+                )
             import importlib
 
             data = dct.get("data", {})

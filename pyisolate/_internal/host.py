@@ -526,7 +526,7 @@ class Extension(Generic[T]):
 
         # Setup JSON-RPC
         tensor_transport = self._tensor_transport_mode()
-        transport = JSONSocketTransport(client_sock)
+        transport = JSONSocketTransport(client_sock, restricted=use_sandbox)
         if hasattr(transport, "set_tensor_transport_mode"):
             transport.set_tensor_transport_mode(tensor_transport)
         logger.debug("Child connected, sending bootstrap data")
