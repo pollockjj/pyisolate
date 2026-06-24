@@ -397,7 +397,8 @@ class JSONSocketTransport:
                 from .tensor_serializer import deserialize_tensor
 
                 return deserialize_tensor(dct, mode=self._tensor_transport)
-            except Exception:
+            except ImportError:
+                # Minimal sealed worker (no torch/numpy): hand back the raw JSON payload.
                 return dct
 
         # Generic Registry Lookup for __type__
