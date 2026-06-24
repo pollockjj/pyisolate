@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 from unittest.mock import patch
 
@@ -63,18 +64,20 @@ def test_sealed_host_ro_paths_defaults_off_and_validation() -> None:
 
     valid = _make_config(
         execution_model="sealed_worker",
-        sealed_host_ro_paths=["/home/johnj/ComfyUI"],
+        sealed_host_ro_paths=[os.path.abspath("/opt/comfyui")],
     )
     validate_backend_config(valid)
 
     wrong_mode = _make_config(
         execution_model="host-coupled",
-        sealed_host_ro_paths=["/home/johnj/ComfyUI"],
+        sealed_host_ro_paths=[os.path.abspath("/opt/comfyui")],
     )
     with pytest.raises(ValueError, match="sealed_host_ro_paths requires execution_model='sealed_worker'"):
         validate_backend_config(wrong_mode)
 
-    non_list = _make_config(execution_model="sealed_worker", sealed_host_ro_paths="/home/johnj/ComfyUI")
+    non_list = _make_config(
+        execution_model="sealed_worker", sealed_host_ro_paths=os.path.abspath("/opt/comfyui")
+    )
     with pytest.raises(ValueError, match="sealed_host_ro_paths must be a list of absolute paths"):
         validate_backend_config(non_list)
 

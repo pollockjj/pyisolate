@@ -1,4 +1,5 @@
 import gc
+import sys
 from typing import Any
 
 import pytest
@@ -30,6 +31,7 @@ async def test_tensor_roundtrip_cpu(reference_host: Any) -> None:
     print("[TEST] CPU tensor verification passed.")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="CUDA-IPC tensor sharing is Linux-only")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.asyncio
 async def test_tensor_roundtrip_cuda(reference_host: Any) -> None:
