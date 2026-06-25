@@ -117,6 +117,7 @@ def _generate_pixi_toml(config: ExtensionConfig) -> str:
     if config.get("package_manager") == "conda":
         # [pypi-options] — extra index URLs and find-links for local wheels
         pypi_options_lines: list[str] = []
+        extra_index_urls: list[str] = []
         if cuda_wheels_config:
             # Support both single index_url and multiple index_urls
             index_urls = cuda_wheels_config.get("index_urls", [])
@@ -124,9 +125,15 @@ def _generate_pixi_toml(config: ExtensionConfig) -> str:
                 single = cuda_wheels_config.get("index_url", "")
                 if single:
                     index_urls = [single]
-            if index_urls:
-                urls_str = ", ".join(f'"{u}"' for u in index_urls)
-                pypi_options_lines.append(f"extra-index-urls = [{urls_str}]")
+            extra_index_urls.extend(index_urls)
+        # Sealed nodes bringing their own GPU stack declare extra indexes directly.
+        extra_index_urls.extend(config.get("extra_index_urls", []))
+        if extra_index_urls:
+            urls_str = ", ".join(f'"{u}"' for u in extra_index_urls)
+            pypi_options_lines.append(f"extra-index-urls = [{urls_str}]")
+            # local-version wheels (e.g. +cu126torch2.8) also exist on PyPI; first-match
+            # won't fall through to the extra index, so best-match is required to resolve them
+            pypi_options_lines.append('index-strategy = "unsafe-best-match"')
         find_links_raw = config.get("find_links", [])
         if isinstance(find_links_raw, str):
             find_links: list[str] = [find_links_raw]
