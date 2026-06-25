@@ -600,20 +600,26 @@ def register_tensor_serializer(registry: Any, mode: str = "shared_memory") -> No
     def serialize_dtype(obj: Any) -> str:
         return str(obj)
 
-    def deserialize_dtype(data: str) -> Any:
+    def deserialize_dtype(data: Any) -> Any:
         import torch
 
-        # Handle "torch.float32" -> torch.float32
-        dtype_name = data.split(".")[-1]
+        # Accept the bare-string form ("torch.float32") and any dict form an
+        # overriding adapter may emit (e.g. {"dtype_str": "torch.float32"}); a
+        # cross-process serializer-format mismatch must not break the round-trip.
+        if isinstance(data, dict):
+            data = next((v for k, v in data.items() if k != "__type__" and isinstance(v, str)), "")
+        dtype_name = str(data).split(".")[-1]
         return getattr(torch, dtype_name)
 
     def serialize_device(obj: Any) -> str:
         return str(obj)
 
-    def deserialize_device(data: str) -> Any:
+    def deserialize_device(data: Any) -> Any:
         import torch
 
-        return torch.device(data)
+        if isinstance(data, dict):
+            data = next((v for k, v in data.items() if k != "__type__" and isinstance(v, str)), "")
+        return torch.device(str(data))
 
     def serialize_size(obj: Any) -> list:
         return list(obj)
