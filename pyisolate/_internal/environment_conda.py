@@ -157,7 +157,7 @@ def _generate_pixi_toml(config: ExtensionConfig) -> str:
         lines.append("[pypi-dependencies]")
         source_path = _pyisolate_source_path()
         if (source_path / "pyproject.toml").exists():
-            lines.append(f'pyisolate = {{ path = "{_toml_path_string(source_path)}" }}')
+            lines.append(f'pyisolate = {{ path = "{_toml_path_string(source_path)}", editable = true }}')
         else:
             try:
                 version = importlib.metadata.version("pyisolate")
