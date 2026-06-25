@@ -7,6 +7,7 @@ child process.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -209,7 +210,29 @@ def _make_service_shim(
     for func_name, rpc_method in methods.items():
         target = rpc_method or func_name
 
-        def _forward(*args: Any, _service: str = service_id, _method: str = target, **kwargs: Any) -> Any:
+        def _forward(
+            *args: Any,
+            _service: str = service_id,
+            _method: str = target,
+            _fn: str = func_name,
+            **kwargs: Any,
+        ) -> Any:
+            # Only dispatchable at execution time: the RPC loop must be running
+            # and we must be off that loop's thread (a worker thread) to block on
+            # the result. At module-import time the extension runs synchronously
+            # on the RPC loop thread; present as a missing attribute so callers
+            # that probe host modules at import scope degrade (their typical
+            # `except (ImportError, AttributeError)`) instead of crashing.
+            loop = getattr(rpc, "default_loop", None)
+            try:
+                on_loop = asyncio.get_running_loop() is loop
+            except RuntimeError:
+                on_loop = False
+            if loop is None or not loop.is_running() or on_loop:
+                raise AttributeError(
+                    f"{module_name}.{_fn} is only callable at execution time "
+                    "(RPC running, off the event-loop thread)"
+                )
             return rpc.call_service_sync(_service, _method, *args, **kwargs)
 
         mod.__dict__[func_name] = _forward
