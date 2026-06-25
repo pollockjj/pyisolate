@@ -238,6 +238,13 @@ async def _async_uds_entrypoint(
         if adapter and hasattr(adapter, "setup_child_event_hooks"):
             adapter.setup_child_event_hooks(extension)
 
+        # Install host-service module shims for sealed workers so the extension's
+        # `import folder_paths` (etc.) resolves to RPC calls at execution time.
+        # No-op for host-coupled children (they keep the real modules).
+        from .bootstrap import install_service_module_shims
+
+        install_service_module_shims(rpc)
+
         # Import and load the extension module
         import importlib.util
 
