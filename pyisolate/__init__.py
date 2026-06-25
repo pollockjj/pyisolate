@@ -44,7 +44,7 @@ from .sealed import SealedExtension, SealedNodeExtension
 if TYPE_CHECKING:
     from .interfaces import IsolationAdapter
 
-__version__ = "0.10.4"
+__version__ = "0.10.5"
 
 __all__ = [
     "ExtensionBase",
