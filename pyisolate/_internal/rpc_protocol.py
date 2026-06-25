@@ -303,6 +303,77 @@ class AsyncRPC:
 
         return cast(proxied_type, CallWrapper())
 
+    def create_dynamic_caller(self, object_id: str) -> Any:
+        """Build a class-free RPC caller for a service registered under ``object_id``.
+
+        Unlike :meth:`create_caller`, this needs no local copy of the service class.
+        Any non-underscore attribute access returns an async callable that dispatches
+        the same ``{object_id, method, args, kwargs}`` wire message; the host resolves
+        the method by name. Intended for callers that cannot import the service's
+        Python class (e.g. sealed workers in a foreign interpreter).
+        """
+        this = self
+
+        class DynamicServiceCaller:
+            def __getattr__(self, name: str) -> Any:
+                if name.startswith("_"):
+                    raise AttributeError(name)
+
+                async def method(*args: Any, **kwargs: Any) -> Any:
+                    serialized_args = serialize_for_isolation(args)
+                    serialized_kwargs = serialize_for_isolation(kwargs)
+
+                    loop = asyncio.get_event_loop()
+                    pending_request = RPCPendingRequest(
+                        kind="call",
+                        object_id=object_id,
+                        parent_call_id=this.handling_call_id.get(),
+                        calling_loop=loop,
+                        future=loop.create_future(),
+                        method=name,
+                        args=serialized_args,
+                        kwargs=serialized_kwargs,
+                    )
+                    this.outbox.put(pending_request)
+                    return await pending_request["future"]
+
+                return method
+
+        return DynamicServiceCaller()
+
+    def call_service_sync(
+        self,
+        object_id: str,
+        method: str,
+        *args: Any,
+        timeout_ms: int | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Invoke a remote service method by name and block for the result.
+
+        Safe to call from a worker thread (e.g. a sealed node handler running under
+        ``loop.run_in_executor``): the coroutine is scheduled on the RPC event loop
+        and the calling thread blocks on the result. Raises if called on the RPC
+        event-loop thread itself (which would deadlock).
+        """
+        loop = self.default_loop
+        if loop is None:
+            raise RuntimeError("RPC default loop is not available for synchronous call")
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            raise RuntimeError(
+                "call_service_sync cannot block the RPC event-loop thread; "
+                "call it from a worker thread"
+            )
+        caller = self.create_dynamic_caller(object_id)
+        coro = getattr(caller, method)(*args, **kwargs)
+        timeout = (timeout_ms / 1000.0) if timeout_ms is not None else None
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=timeout)
+
     def register_callee(self, object_instance: object, object_id: str) -> None:
         with self.lock:
             if object_id in self.callees:
