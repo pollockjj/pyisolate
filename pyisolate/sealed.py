@@ -33,20 +33,19 @@ def _sanitize_for_transport(value: Any) -> Any:
     return str(value)
 
 
-class SealedNodeExtension(ExtensionBase):
-    """Minimal node wrapper for sealed workers.
+class SealedExtension(ExtensionBase):
+    """Framework-agnostic base for sealed (foreign-interpreter) worker extensions.
 
-    The wrapper supports V1-style ``NODE_CLASS_MAPPINGS`` nodes without importing
-    host framework runtime modules into the child interpreter.
+    Provides the hermetic-worker machinery shared by all sealed extensions: a
+    remote-object handle store, proxy-handle wrap/resolve helpers, transport-state
+    flushing, and an optional numpy passthrough serializer. It carries no knowledge
+    of any host framework's node, route, or web concepts; framework-specific
+    wrappers subclass this and add their own surface.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.node_classes: dict[str, type[Any]] = {}
-        self.display_names: dict[str, str] = {}
-        self.node_instances: dict[str, Any] = {}
         self.remote_objects: dict[str, Any] = {}
-        self._module: ModuleType | None = None
         self._register_ndarray_serializer()
 
     @staticmethod
@@ -90,50 +89,6 @@ class SealedNodeExtension(ExtensionBase):
             }
 
         registry.register("ndarray", serialize_ndarray_as_tensor_value, None, data_type=True)
-
-    async def on_module_loaded(self, module: ModuleType) -> None:
-        self._module = module
-        self.node_classes = getattr(module, "NODE_CLASS_MAPPINGS", {}) or {}
-        self.display_names = getattr(module, "NODE_DISPLAY_NAME_MAPPINGS", {}) or {}
-        self.node_instances = {}
-
-        # Web directory handling — delegate to adapter
-        if getattr(module, "WEB_DIRECTORY", None) is not None:
-            from ._internal.adapter_registry import AdapterRegistry
-
-            adapter = AdapterRegistry.get()
-            if adapter and hasattr(adapter, "setup_web_directory"):
-                adapter.setup_web_directory(module)
-
-    async def list_nodes(self) -> dict[str, str]:
-        return {name: self.display_names.get(name, name) for name in self.node_classes}
-
-    async def get_node_info(self, node_name: str) -> dict[str, Any]:
-        return await self.get_node_details(node_name)
-
-    async def get_node_details(self, node_name: str) -> dict[str, Any]:
-        node_cls = self._get_node_class(node_name)
-        input_types_raw = node_cls.INPUT_TYPES() if hasattr(node_cls, "INPUT_TYPES") else {}
-        output_is_list = getattr(node_cls, "OUTPUT_IS_LIST", None)
-        if output_is_list is not None:
-            output_is_list = tuple(bool(x) for x in output_is_list)
-
-        return {
-            "input_types": _sanitize_for_transport(input_types_raw),
-            "return_types": tuple(str(t) for t in getattr(node_cls, "RETURN_TYPES", ())),
-            "return_names": getattr(node_cls, "RETURN_NAMES", None),
-            "function": str(getattr(node_cls, "FUNCTION", "execute")),
-            "category": str(getattr(node_cls, "CATEGORY", "")),
-            "output_node": bool(getattr(node_cls, "OUTPUT_NODE", False)),
-            "output_is_list": output_is_list,
-            "is_v3": False,
-        }
-
-    async def get_input_types(self, node_name: str) -> dict[str, Any]:
-        node_cls = self._get_node_class(node_name)
-        if hasattr(node_cls, "INPUT_TYPES"):
-            return cast(dict[str, Any], node_cls.INPUT_TYPES())
-        return {}
 
     def _wrap_for_transport(self, data: Any) -> Any:
         """Wrap non-primitive objects as RemoteObjectHandle for proxy round-trip.
@@ -183,6 +138,83 @@ class SealedNodeExtension(ExtensionBase):
             return type(data)(resolved)
         return data
 
+    async def flush_transport_state(self) -> int:
+        flushed = 0
+        _flush_fn: Any = None
+        with contextlib.suppress(Exception):
+            from . import flush_tensor_keeper as _flush_fn
+        if callable(_flush_fn):
+            flushed = int(_flush_fn())
+        # Clear pack-local proxy handles to prevent memory accumulation
+        # across workflow runs.
+        if hasattr(self, "remote_objects"):
+            self.remote_objects.clear()
+        return flushed
+
+    async def get_remote_object(self, object_id: str) -> Any:
+        if object_id not in self.remote_objects:
+            raise KeyError(f"Remote object {object_id} not found")
+        return self.remote_objects[object_id]
+
+
+class SealedNodeExtension(SealedExtension):
+    """Minimal node wrapper for sealed workers.
+
+    The wrapper supports V1-style ``NODE_CLASS_MAPPINGS`` nodes without importing
+    host framework runtime modules into the child interpreter.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.node_classes: dict[str, type[Any]] = {}
+        self.display_names: dict[str, str] = {}
+        self.node_instances: dict[str, Any] = {}
+        self._module: ModuleType | None = None
+
+    async def on_module_loaded(self, module: ModuleType) -> None:
+        self._module = module
+        self.node_classes = getattr(module, "NODE_CLASS_MAPPINGS", {}) or {}
+        self.display_names = getattr(module, "NODE_DISPLAY_NAME_MAPPINGS", {}) or {}
+        self.node_instances = {}
+
+        # Web directory handling — delegate to adapter
+        if getattr(module, "WEB_DIRECTORY", None) is not None:
+            from ._internal.adapter_registry import AdapterRegistry
+
+            adapter = AdapterRegistry.get()
+            if adapter and hasattr(adapter, "setup_web_directory"):
+                adapter.setup_web_directory(module)
+
+    async def list_nodes(self) -> dict[str, str]:
+        return {name: self.display_names.get(name, name) for name in self.node_classes}
+
+    async def get_node_info(self, node_name: str) -> dict[str, Any]:
+        return await self.get_node_details(node_name)
+
+    async def get_node_details(self, node_name: str) -> dict[str, Any]:
+        node_cls = self._get_node_class(node_name)
+        input_types_raw = node_cls.INPUT_TYPES() if hasattr(node_cls, "INPUT_TYPES") else {}
+        output_is_list = getattr(node_cls, "OUTPUT_IS_LIST", None)
+        if output_is_list is not None:
+            output_is_list = tuple(bool(x) for x in output_is_list)
+
+        return {
+            "input_types": _sanitize_for_transport(input_types_raw),
+            "return_types": tuple(str(t) for t in getattr(node_cls, "RETURN_TYPES", ())),
+            "return_names": getattr(node_cls, "RETURN_NAMES", None),
+            "function": str(getattr(node_cls, "FUNCTION", "execute")),
+            "category": str(getattr(node_cls, "CATEGORY", "")),
+            "output_node": bool(getattr(node_cls, "OUTPUT_NODE", False)),
+            "output_is_list": output_is_list,
+            "is_v3": False,
+        }
+
+    async def get_input_types(self, node_name: str) -> dict[str, Any]:
+        node_cls = self._get_node_class(node_name)
+        if hasattr(node_cls, "INPUT_TYPES"):
+            return cast(dict[str, Any], node_cls.INPUT_TYPES())
+        return {}
+
     async def execute_node(self, node_name: str, **inputs: Any) -> tuple[Any, ...]:
         instance = self._get_node_instance(node_name)
         node_cls = self._get_node_class(node_name)
@@ -208,24 +240,6 @@ class SealedNodeExtension(ExtensionBase):
 
         # Wrap unregistered objects as proxy handles for transport.
         return tuple(self._wrap_for_transport(item) for item in result)
-
-    async def flush_transport_state(self) -> int:
-        flushed = 0
-        _flush_fn: Any = None
-        with contextlib.suppress(Exception):
-            from . import flush_tensor_keeper as _flush_fn
-        if callable(_flush_fn):
-            flushed = int(_flush_fn())
-        # Clear pack-local proxy handles to prevent memory accumulation
-        # across workflow runs.
-        if hasattr(self, "remote_objects"):
-            self.remote_objects.clear()
-        return flushed
-
-    async def get_remote_object(self, object_id: str) -> Any:
-        if object_id not in self.remote_objects:
-            raise KeyError(f"Remote object {object_id} not found")
-        return self.remote_objects[object_id]
 
     def _get_node_class(self, node_name: str) -> type[Any]:
         if node_name not in self.node_classes:
