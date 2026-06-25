@@ -24,7 +24,7 @@ from typing import Any, cast
 from ..config import ExtensionConfig
 from ..interfaces import IsolationAdapter
 from ..shared import ExtensionBase
-from .bootstrap import bootstrap_child
+from .bootstrap import bootstrap_child, install_service_module_shims
 from .rpc_protocol import AsyncRPC, ProxiedSingleton, set_child_rpc_instance
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,11 @@ async def async_entrypoint(
         # Let the adapter wire child-side event hooks (e.g., progress bar)
         if _adapter and hasattr(_adapter, "setup_child_event_hooks"):
             _adapter.setup_child_event_hooks(extension)
+
+        # Install host-service module shims for sealed workers so the extension's
+        # module-level `import folder_paths` (etc.) resolves to RPC calls. No-op
+        # for host-coupled children (they import the real modules).
+        install_service_module_shims(rpc)
 
         # Sanitize module name for use as Python identifier.
         # Replace '-' and '.' with '_' to prevent import errors when module names contain

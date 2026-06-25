@@ -181,6 +181,24 @@ def environment(**env_vars: Any) -> Iterator[None]:
                 os.environ[key] = value
 
 
+def _adapter_service_module_map(adapter: object) -> dict[str, object]:
+    """Optional host-declared {module_name: {service, methods}} map for child shims.
+
+    Duck-typed so adapters predating this hook (no get_service_module_map) just
+    yield an empty map. pyisolate stays framework-agnostic: it only carries and
+    later installs whatever the host declares.
+    """
+    getter = getattr(adapter, "get_service_module_map", None)
+    if not callable(getter):
+        return {}
+    try:
+        result = getter()
+    except Exception as exc:
+        logger.warning("adapter.get_service_module_map failed: %s", exc)
+        return {}
+    return result if isinstance(result, dict) else {}
+
+
 def build_extension_snapshot(module_path: str) -> dict[str, object]:
     """Construct snapshot payload with adapter metadata for child bootstrap."""
     snapshot: dict[str, object] = serialize_host_snapshot()
@@ -230,6 +248,7 @@ def build_extension_snapshot(module_path: str) -> dict[str, object]:
             "additional_paths": path_config.get("additional_paths", []),
             "filtered_subdirs": path_config.get("filtered_subdirs"),
             "context_data": {"module_path": module_path},
+            "service_module_map": _adapter_service_module_map(adapter),
         }
     )
     return snapshot

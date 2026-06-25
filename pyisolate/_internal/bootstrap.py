@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+import types
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,6 +20,10 @@ from ..path_helpers import build_child_sys_path
 from .serialization_registry import SerializerRegistry
 
 logger = logging.getLogger(__name__)
+
+# Parsed host snapshot from the most recent bootstrap_child(); consulted later by
+# install_service_module_shims() once the RPC channel exists in the child.
+_LAST_SNAPSHOT: dict[str, Any] | None = None
 
 
 def _should_apply_host_sys_path(snapshot: dict[str, Any]) -> bool:
@@ -159,6 +164,9 @@ def bootstrap_child() -> IsolationAdapter | None:
         except json.JSONDecodeError as exc:
             raise ValueError(f"Failed to decode PYISOLATE_HOST_SNAPSHOT: {exc}") from exc
 
+    global _LAST_SNAPSHOT
+    _LAST_SNAPSHOT = snapshot
+
     _apply_sys_path(snapshot)
 
     adapter: IsolationAdapter | None = None
@@ -185,3 +193,58 @@ def bootstrap_child() -> IsolationAdapter | None:
         adapter.register_serializers(registry)
 
     return adapter
+
+
+def _make_service_shim(
+    module_name: str, service_id: str, methods: dict[str, Any], rpc: Any
+) -> types.ModuleType:
+    """Build a synthetic module that forwards function calls to a host service.
+
+    Each declared function dispatches synchronously over RPC by name; the host
+    resolves ``service_id`` + the rpc method and runs the real implementation.
+    Calls only work at execution time (RPC running), not at module-import time.
+    """
+    mod = types.ModuleType(module_name)
+    mod.__pyisolate_service_shim__ = True  # type: ignore[attr-defined]
+    for func_name, rpc_method in methods.items():
+        target = rpc_method or func_name
+
+        def _forward(*args: Any, _service: str = service_id, _method: str = target, **kwargs: Any) -> Any:
+            return rpc.call_service_sync(_service, _method, *args, **kwargs)
+
+        mod.__dict__[func_name] = _forward
+    return mod
+
+
+def install_service_module_shims(rpc: Any) -> int:
+    """Install host-declared service module shims into ``sys.modules`` (sealed only).
+
+    Reads the ``service_module_map`` carried in the host snapshot and, for a sealed
+    child (which lacks the host framework's real modules), installs forwarding
+    shims so e.g. ``import folder_paths`` resolves to RPC calls. Host-coupled
+    children keep their real modules and are skipped. Returns the count installed.
+    """
+    snapshot = _LAST_SNAPSHOT
+    if snapshot is None:
+        return 0
+    # Host-coupled children import the real modules; only sealed workers need shims.
+    if _should_apply_host_sys_path(snapshot):
+        return 0
+    service_map = snapshot.get("service_module_map") or {}
+    if not isinstance(service_map, dict):
+        return 0
+
+    installed = 0
+    for module_name, spec in service_map.items():
+        if not isinstance(spec, dict):
+            continue
+        service_id = spec.get("service")
+        methods = spec.get("methods") or {}
+        if not service_id or not isinstance(methods, dict):
+            continue
+        sys.modules[str(module_name)] = _make_service_shim(str(module_name), str(service_id), methods, rpc)
+        installed += 1
+
+    if installed:
+        logger.debug("Installed %d host-service module shim(s) for sealed worker", installed)
+    return installed
