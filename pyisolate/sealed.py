@@ -188,6 +188,10 @@ class SealedNodeExtension(SealedExtension):
     async def list_nodes(self) -> dict[str, str]:
         return {name: self.display_names.get(name, name) for name in self.node_classes}
 
+    async def flush_pending_routes(self) -> int:
+        """Flush child-buffered host routes after node discovery. Sealed workers buffer none."""
+        return 0
+
     async def get_node_info(self, node_name: str) -> dict[str, Any]:
         return await self.get_node_details(node_name)
 
