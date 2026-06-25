@@ -222,14 +222,6 @@ class SealedNodeExtension(ExtensionBase):
             self.remote_objects.clear()
         return flushed
 
-    async def flush_pending_routes(self) -> int:
-        """Flush buffered route registrations to host. Called by host after node discovery.
-
-        Sealed workers are hermetic (no host adapter, no buffered host web routes), so there
-        is nothing to flush.
-        """
-        return 0
-
     async def get_remote_object(self, object_id: str) -> Any:
         if object_id not in self.remote_objects:
             raise KeyError(f"Remote object {object_id} not found")
